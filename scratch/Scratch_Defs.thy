@@ -110,3 +110,9 @@ lemma "Refine_Basic.bind M f \<equiv> case M of
   unfolding Refine_Basic.bind_def .
 lemma "top::'a nres \<equiv> FAILi" unfolding Refine_Basic.top_nres_def .
 lemma "bot::'a nres \<equiv> RES {}" unfolding Refine_Basic.bot_nres_def .
+
+term op_list_get
+term op_list_set
+find_theorems op_list_set term 0
+thm HOL_list.fold_custom_empty
+term list_custom_empty
