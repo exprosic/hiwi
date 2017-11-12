@@ -25,7 +25,7 @@ definition fib_rec_body :: "(nat \<Rightarrow> int nres) \<Rightarrow> nat \<Rig
       }"
 
 definition fib_rec_body' :: "(nat \<Rightarrow> int nres) \<Rightarrow> nat \<Rightarrow> int nres" where
-  "fib_rec_body \<equiv> \<lambda>f n.
+  "fib_rec_body' \<equiv> \<lambda>f n.
     case n of
       0 \<Rightarrow> RETURN 1
     | Suc 0 \<Rightarrow> RETURN 1
@@ -34,42 +34,28 @@ definition fib_rec_body' :: "(nat \<Rightarrow> int nres) \<Rightarrow> nat \<Ri
         f1 \<leftarrow> f (Suc n');
         RETURN (f0+f1)
       }"
+
 definition fib_rec :: "nat \<Rightarrow> int nres" where
   "fib_rec n \<equiv> RECT fib_rec_body n"
 
 lemma fib_rec_refine: "(fib_rec, fib_spec) \<in> Id \<rightarrow> \<langle>Id\<rangle>nres_rel"
-  unfolding fib_rec_def fib_spec_def
+  unfolding fib_rec_def fib_spec_def fib_rec_body_def
   apply (clarsimp intro!: nres_relI simp:)
-  apply (refine_vcg RECT_rule[where body=fib_rec_body and V=less_than and pre="\<lambda>_. True" and M="\<lambda>n. RETURN (fib n)"])
-  subgoal unfolding fib_rec_body_def by refine_mono
+  apply (refine_vcg RECT_rule[where body=fib_rec_body and V=less_than and pre="\<lambda>_. True" and M="\<lambda>n. RETURN (fib n)", unfolded fib_rec_body_def])
   subgoal ..
   subgoal ..
+  subgoal for _ f n by (cases n rule: fib.cases; simp)
   subgoal premises prems for _ f n
-    thm prems(1)[simplified] prems(3)[symmetric]
-    unfolding fib_rec_body_def
-    apply (refine_vcg order_trans[OF prems(1)]; cases n rule: fib.cases; simp)
-done
-
-    term 0 (*
-    subgoal premises prems'[simp] for m
-      thm prems(1)[of m, simplified] prems(1)[of "Suc m", simplified]
-      apply (rule order_trans)
-       apply (rule prems(1)[of m, simplified])
-      apply simp
-      unfolding RETURN_def[symmetric]
-      apply (refine_vcg)
-      apply (rule order_trans)
-       apply (rule prems(1)[of "Suc m", simplified])
-      apply simp
-      done
+    thm prems(1)[simplified] prems(3)[symmetric] prems(4)
+    apply (refine_vcg order_trans[OF prems(1)]; cases n rule: fib.cases)
+    using prems(4) apply auto
     done
   done
-term 0 (*
+
 sepref_definition fib_rec1 is fib_rec :: "nat_assn\<^sup>d \<rightarrow>\<^sub>a int_assn"
   unfolding fib_rec_def fib_rec_body_def
-  apply sepref_dbg_keep
-      apply sepref_dbg_trans_keep
-        apply sepref_dbg_trans_step_keep
+  by sepref
+
 
 
 
