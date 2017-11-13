@@ -55,62 +55,6 @@ lemma fib_rec_refine: "(fib_rec, fib_spec) \<in> Id \<rightarrow> \<langle>Id\<r
 sepref_definition fib_rec1 is fib_rec :: "nat_assn\<^sup>k \<rightarrow>\<^sub>a int_assn"
   unfolding fib_rec_def fib_rec_body_def
   by sepref
-
-definition fib_rec_mem_body :: "((int list \<times> nat) \<Rightarrow> (int list \<times> int) nres) \<Rightarrow> (int list \<times> nat) \<Rightarrow> (int list \<times> int) nres" where
-  "fib_rec_mem_body \<equiv> \<lambda>f (t, n). do {
-    tn \<leftarrow> mop_list_get t n;
-    if tn \<ge> 0
-      then RETURN (t, tn)
-      else do {
-        (t, tn) \<leftarrow> if n < 2
-            then RETURN (t, 1)
-            else do {
-              (t, f0) \<leftarrow> f (t, n-2);
-              (t, f1) \<leftarrow> f (t, n-1);
-              RETURN (t, f0 + f1)
-            };
-        t \<leftarrow> mop_list_set t n tn;
-        RETURN (t, tn)
-      }
-   }"
-
-definition fib_rec_mem :: "nat \<Rightarrow> int nres" where
-  "fib_rec_mem n \<equiv> do {
-    (_, v) \<leftarrow> RECT fib_rec_mem_body (replicate (n+1) (-1), n);
-    RETURN v
-   }"
-
-
-sepref_definition fib_rec_mem1 is fib_rec_mem :: "nat_assn\<^sup>k \<rightarrow>\<^sub>a int_assn"
-  unfolding fib_rec_mem_def fib_rec_mem_body_def
-  apply (rewrite in "RECT _ (\<hole>, _)" array_fold_custom_of_list)
-  by sepref
-
 term 0 (**)
 
-definition cmem :: "int list \<Rightarrow> bool" where
-  "cmem M \<equiv> \<forall>i. i<length M \<longrightarrow> M!i\<ge>0 \<longrightarrow> M!i=fib i"
-
-lemma cmem_intro:
-  assumes "\<And>i. i<length M \<Longrightarrow> M!i\<ge>0 ==> M!i=fib i"
-  shows "cmem M"
-  using assms unfolding cmem_def by fastforce
-
-lemma cmem_elim:
-  assumes "cmem M" "i < length M"
-  obtains "M!i < 0" | "fib i = M!i "
-  using assms unfolding cmem_def by fastforce
-  term 0 
-
-lemma cmem_update:
-  "\<lbrakk>cmem M; v = fib i\<rbrakk> \<Longrightarrow> cmem (list_update M i v)"
-  by (fastforce intro!: cmem_intro elim: cmem_elim simp: nth_list_update')
-  
-
-
-
-
-
-
-
-
+end
