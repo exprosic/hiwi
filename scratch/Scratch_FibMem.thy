@@ -170,7 +170,9 @@ lemma checkmemT_vcg_rule:
     done
   done
 
-lemma blah: "runStateT (if b then StateT sx else StateT sy) = (if b then sx else sy)"
+lemma blah:
+  "runStateT (if b then StateT sx else StateT sy) = (if b then sx else sy)"
+  "(if b then fx else fy) x = (if b then fx x else fy x)"
   by auto
 
 lemma "(RECT fib_rec_mem_body', fib_mem_spec) \<in> (br id (uncurry param_isvalid)) \<rightarrow> \<langle>Id\<times>\<^sub>rId\<rangle>nres_rel"
@@ -219,5 +221,8 @@ lemma "(RECT fib_rec_mem_body', fib_mem_spec) \<in> (br id (uncurry param_isvali
     unfolding stateT.sel
     apply auto
     apply refine_mono
-      oops
+    done
+  done
 
+end
+end
