@@ -116,3 +116,7 @@ term op_list_set
 find_theorems op_list_set term 0
 thm HOL_list.fold_custom_empty
 term list_custom_empty
+
+term flatf_gfp
+term flatf_ord.fixp
+term trimono

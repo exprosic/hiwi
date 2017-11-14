@@ -60,6 +60,9 @@ definition checkmemT :: "nat \<Rightarrow> (tab, int) stateT \<Rightarrow> (tab,
       }
   }"
 
+definition unpack_body :: "(('a \<Rightarrow> ('M, 'b) stateT) \<Rightarrow> ('a \<Rightarrow> ('M, 'b) stateT)) \<Rightarrow> ((('a \<times> 'M) \<Rightarrow> ('b \<times> 'M) nres) \<Rightarrow> (('a \<times> 'M) \<Rightarrow> ('b \<times> 'M) nres))" where
+  "unpack_body body \<equiv> \<lambda>f (n, M). runStateT (body ((StateT oo curry) f) n) M"
+
 definition cmem :: "tab \<Rightarrow> bool" where
   "cmem M \<equiv> \<forall>i v. i<length M \<longrightarrow> M!i = Some v \<longrightarrow> v=fib i"
 
@@ -91,21 +94,22 @@ begin
 definition fib_spec :: "int nres" where
   "fib_spec \<equiv> RETURN (fib N)"
 
-definition fib_rec_mem_body' :: "((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres) \<Rightarrow> ((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres)" where
-  "fib_rec_mem_body' \<equiv> \<lambda>f (n, M). runStateT (checkmemT n (do {
+definition fib_rec_mem_body' :: "(nat \<Rightarrow> (tab, int) stateT) \<Rightarrow> (nat \<Rightarrow> (tab, int) stateT)" where
+  "fib_rec_mem_body' \<equiv> \<lambda>f n. checkmemT n (do {
     (*stateT monad*)
     if n<2
       then returnT 1
       else do {
-        f0 \<leftarrow> (StateT \<circ>\<circ> curry) f (n-2);
-        f1 \<leftarrow> (StateT \<circ>\<circ> curry) f (n-1);
+        f0 \<leftarrow> f (n-2);
+        f1 \<leftarrow> f (n-1);
         returnT (f0 + f1)
       }
-    })) M"
+    })"
 
 definition fib_rec_mem' :: "int nres" where
   "fib_rec_mem' \<equiv> do {
-    (v, _) \<leftarrow> RECT fib_rec_mem_body' (N, replicate (N+1) None);
+    (*nres monad*)
+    (v, _) \<leftarrow> RECT (unpack_body fib_rec_mem_body') (N, replicate (N+1) None);
     RETURN v
   }"
 
@@ -141,11 +145,11 @@ lemma if_distrib2:
   by simp
 
 lemma fib_rec_mem_refine_aux:
-  "(RECT fib_rec_mem_body', fib_mem_spec) \<in> (br id (uncurry param_isvalid)) \<rightarrow> \<langle>Id\<times>\<^sub>rId\<rangle>nres_rel"
+  "(RECT (unpack_body fib_rec_mem_body'), fib_mem_spec) \<in> (br id (uncurry param_isvalid)) \<rightarrow> \<langle>Id\<times>\<^sub>rId\<rangle>nres_rel"
   apply (clarsimp simp: uncurry_def in_br_conv intro!: nres_relI)
   apply (rule RECT_rule[where V="fst <*mlex*> {}" and pre="uncurry param_isvalid"])
   subgoal premises
-    unfolding fib_rec_mem_body'_def
+    unfolding fib_rec_mem_body'_def unpack_body_def
     unfolding checkmemT_def getT_def putT_def bindT_def liftT_def curry_def returnT_def
     unfolding option.case_distrib if_distrib stateT.sel if_distrib2
     unfolding stateT.sel comp_def
@@ -155,7 +159,7 @@ lemma fib_rec_mem_refine_aux:
   subgoal by (simp add: param_isvalid_def)
   subgoal premises prems for n M f nM
     thm prems
-    apply (unfold fib_rec_mem_body'_def)
+    apply (unfold fib_rec_mem_body'_def unpack_body_def)
     apply (auto split: prod.split)
     subgoal for x' M'
       apply (rule checkmemT_vcg_rule)
@@ -195,7 +199,7 @@ lemma fib_rec_mem_refine_aux:
 corollary fib_rec_mem_refine:
   "(fib_rec_mem', fib_spec) \<in> \<langle>Id\<rangle>nres_rel"
 proof (clarsimp intro!: nres_relI)
-  have *:"local.param_isvalid n M \<Longrightarrow> REC\<^sub>T fib_rec_mem_body' (n, M) \<le> local.fib_mem_spec (n, M)" for n M
+  have *:"local.param_isvalid n M \<Longrightarrow> REC\<^sub>T (unpack_body fib_rec_mem_body') (n, M) \<le> local.fib_mem_spec (n, M)" for n M
     using fib_rec_mem_refine_aux by (auto simp: uncurry_def in_br_conv dest!: fun_relD nres_relD)
   show "fib_rec_mem' \<le> fib_spec"
     apply (unfold fib_rec_mem'_def fib_spec_def)
