@@ -55,6 +55,8 @@ sepref_definition fib_rec_mem1 is fib_rec_mem :: "nat_assn\<^sup>k \<rightarrow>
   apply (rewrite in "RECT _ (_, \<hole>_)" array_fold_custom_of_list)
   by sepref
 
+export_code fib_rec_mem1 checking SML_imp
+export_code fib_rec_mem1 in SML_imp module_name FibMem
 (*
 abbreviation "nres_bind \<equiv> Refine_Basic.bind"
 abbreviation "state_bind \<equiv> Monad.bind"
