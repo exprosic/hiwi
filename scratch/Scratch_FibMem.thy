@@ -10,7 +10,7 @@ fun fib :: "nat \<Rightarrow> int" where
 
 declare fib.simps[simp del]
 
-type_synonym tab = "int list"
+type_synonym tab = "int option list"
 
 (*Since fib n \<ge> 0, negative value is used here to represent None*)
 definition is_some :: "int \<Rightarrow> bool" where
@@ -49,28 +49,28 @@ definition checkmemT :: "nat \<Rightarrow> (tab, int) stateT \<Rightarrow> (tab,
   "checkmemT n s \<equiv> do {
     (*stateT monad*)
     M \<leftarrow> getT;
-    Mn \<leftarrow> liftT (mop_list_get M n);
-    if is_some Mn
-      then returnT Mn
-      else do {
+    Mno \<leftarrow> liftT (mop_list_get M n);
+    case Mno of
+      Some Mn \<Rightarrow> returnT Mn
+    | None \<Rightarrow> do {
         v \<leftarrow> s;
-        M' \<leftarrow> liftT (mop_list_set M n v);
+        M' \<leftarrow> liftT (mop_list_set M n (Some v));
         putT M';
         returnT v
       }
   }"
 
 definition cmem :: "tab \<Rightarrow> bool" where
-  "cmem M \<equiv> \<forall>i. i<length M \<longrightarrow> is_some (M!i) \<longrightarrow> M!i=fib i"
+  "cmem M \<equiv> \<forall>i v. i<length M \<longrightarrow> M!i = Some v \<longrightarrow> v=fib i"
 
 lemma cmem_intro:
-  assumes "\<And>i. i<length M \<Longrightarrow> is_some (M!i) \<Longrightarrow> M!i=fib i"
+  assumes "\<And>i v. i<length M \<Longrightarrow> M!i = Some v \<Longrightarrow> v=fib i"
   shows "cmem M"
   using assms unfolding cmem_def is_some_def by fastforce
 
 lemma cmem_elim:
-  assumes "cmem M" "i < length M" "is_some (M!i)"
-  obtains "fib i = M!i "
+  assumes "cmem M" "i < length M" "M!i = Some v"
+  obtains "v = fib i"
   using assms unfolding cmem_def by fastforce
 
 (*
@@ -105,7 +105,7 @@ definition fib_rec_mem_body' :: "((nat \<times> tab) \<Rightarrow> (int \<times>
 
 definition fib_rec_mem' :: "int nres" where
   "fib_rec_mem' \<equiv> do {
-    (v, _) \<leftarrow> RECT fib_rec_mem_body' (N, replicate (N+1) (-1));
+    (v, _) \<leftarrow> RECT fib_rec_mem_body' (N, replicate (N+1) None);
     RETURN v
   }"
 
@@ -120,25 +120,27 @@ lemma checkmemT_vcg_rule:
   assumes "param_isvalid n M \<Longrightarrow> runStateT s M \<le> fib_mem_spec (n, M)"
   shows "param_isvalid n M \<Longrightarrow> runStateT (checkmemT n s) M \<le> fib_mem_spec (n, M)"
   unfolding checkmemT_def bindT_def getT_def putT_def liftT_def
-  apply auto
+  unfolding stateT.sel
+  apply (auto split: option.splits)
   subgoal
-    apply (refine_vcg)
     apply (unfold returnT_def RETURN_def fib_mem_spec_def param_isvalid_def)
-     apply (auto elim!: cmem_elim)
+    apply (refine_vcg order_trans[OF assms])
+      apply (auto simp: fib_mem_spec_def param_isvalid_def)
     done
   subgoal
     apply (refine_vcg)
     subgoal by (auto simp: param_isvalid_def)
     apply (unfold returnT_def RETURN_def fib_mem_spec_def)
     apply (refine_vcg order_trans[OF assms])
-    apply (auto simp add: fib_mem_spec_def)
+    apply (auto simp add: fib_mem_spec_def param_isvalid_def elim!: cmem_elim)
     done
   done
 
 lemma blah:
   "runStateT (if b then StateT sx else StateT sy) = (if b then sx else sy)"
   "(if b then fx else fy) x = (if b then fx x else fy x)"
-  by auto
+  "runStateT (case_option ifNone ifSome v) = case_option (runStateT ifNone) (runStateT \<circ> ifSome) v"
+  by (auto split: option.split)
 
 lemma fib_rec_mem_refine_aux:
   "(RECT fib_rec_mem_body', fib_mem_spec) \<in> (br id (uncurry param_isvalid)) \<rightarrow> \<langle>Id\<times>\<^sub>rId\<rangle>nres_rel"
@@ -149,7 +151,7 @@ lemma fib_rec_mem_refine_aux:
     unfolding checkmemT_def getT_def putT_def bindT_def liftT_def curry_def returnT_def
     unfolding blah
     unfolding stateT.sel comp_def
-    apply auto
+    apply (auto split: option.splits)
     apply refine_mono
     done
   subgoal by (simp add: wf_mlex)
