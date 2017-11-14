@@ -97,8 +97,8 @@ definition fib_rec_mem_body' :: "((nat \<times> tab) \<Rightarrow> (int \<times>
     if n<2
       then returnT 1
       else do {
-        f0 \<leftarrow> (StateT \<circ> (curry f)) (n-2);
-        f1 \<leftarrow> (StateT \<circ> (curry f)) (n-1);
+        f0 \<leftarrow> (StateT \<circ>\<circ> curry) f (n-2);
+        f1 \<leftarrow> (StateT \<circ>\<circ> curry) f (n-1);
         returnT (f0 + f1)
       }
     })) M"
@@ -195,8 +195,7 @@ lemma fib_rec_mem_refine_aux:
 corollary fib_rec_mem_refine:
   "(fib_rec_mem', fib_spec) \<in> \<langle>Id\<rangle>nres_rel"
 proof (clarsimp intro!: nres_relI)
-  have *:"local.param_isvalid n M \<Longrightarrow>
-       REC\<^sub>T fib_rec_mem_body' (n, M) \<le> local.fib_mem_spec (n, M)" for n M
+  have *:"local.param_isvalid n M \<Longrightarrow> REC\<^sub>T fib_rec_mem_body' (n, M) \<le> local.fib_mem_spec (n, M)" for n M
     using fib_rec_mem_refine_aux by (auto simp: uncurry_def in_br_conv dest!: fun_relD nres_relD)
   show "fib_rec_mem' \<le> fib_spec"
     apply (unfold fib_rec_mem'_def fib_spec_def)
