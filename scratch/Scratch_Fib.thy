@@ -24,6 +24,7 @@ definition fib_rec_body :: "(nat \<Rightarrow> int nres) \<Rightarrow> nat \<Rig
         RETURN (f0+f1)
       }"
 
+(* case_nat seems to be unfriendly with sepref_definition *)
 definition fib_rec_body' :: "(nat \<Rightarrow> int nres) \<Rightarrow> nat \<Rightarrow> int nres" where
   "fib_rec_body' \<equiv> \<lambda>f n.
     case n of
