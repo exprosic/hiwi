@@ -136,22 +136,19 @@ lemma checkmemT_vcg_rule:
     done
   done
 
-lemma blah:
-  "runStateT (if b then StateT sx else StateT sy) = (if b then sx else sy)"
+lemma if_distrib2:
   "(if b then fx else fy) x = (if b then fx x else fy x)"
-  "runStateT (case_option ifNone ifSome v) = case_option (runStateT ifNone) (runStateT \<circ> ifSome) v"
-  by (auto split: option.split)
+  by simp
 
 lemma fib_rec_mem_refine_aux:
   "(RECT fib_rec_mem_body', fib_mem_spec) \<in> (br id (uncurry param_isvalid)) \<rightarrow> \<langle>Id\<times>\<^sub>rId\<rangle>nres_rel"
   apply (clarsimp simp: uncurry_def in_br_conv intro!: nres_relI)
   apply (rule RECT_rule[where V="fst <*mlex*> {}" and pre="uncurry param_isvalid"])
-  subgoal
+  subgoal premises
     unfolding fib_rec_mem_body'_def
     unfolding checkmemT_def getT_def putT_def bindT_def liftT_def curry_def returnT_def
-    unfolding blah
+    unfolding option.case_distrib if_distrib stateT.sel if_distrib2
     unfolding stateT.sel comp_def
-    apply (auto split: option.splits)
     apply refine_mono
     done
   subgoal by (simp add: wf_mlex)
