@@ -1,69 +1,20 @@
 theory Scratch_FibMem
-  imports Refine_Imperative_HOL.IICF "dp/Monad"
+  imports Refine_Imperative_HOL.IICF
 begin
 
 fun fib :: "nat \<Rightarrow> int" where
-  "fib 0 = 1"
-| "fib (Suc 0) = 1"
-| "fib (Suc (Suc n)) = fib (Suc n) + fib n"
+  "fib n =
+    (if n=0 then 1 else
+     if n=1 then 1 else
+     fib (n-2) + fib (n-1))"
 
-lemma [simp]:
-  "n < 2 \<Longrightarrow> fib n = 1"
-  "\<not>(n < 2) \<Longrightarrow> fib n = fib (n-2) + fib (n-1)"
-  by (cases n rule: fib.cases; simp)+
-
-definition fib_spec :: "nat \<Rightarrow> int nres" where
-  "fib_spec n \<equiv> RETURN (fib n)"
+declare fib.simps[simp del]
 
 type_synonym tab = "int list"
 
 (*Since fib n \<ge> 0, negative value is used here to represent None*)
 definition is_some :: "int \<Rightarrow> bool" where
   "is_some v \<equiv> v \<ge> 0"
-
-definition checkmem :: "tab \<Rightarrow> nat \<Rightarrow> (int \<times> tab) nres \<Rightarrow> (int \<times> tab) nres" where
-  "checkmem M n v \<equiv> do {
-    (*nres monad*)
-    fn \<leftarrow> mop_list_get M n;
-    if is_some fn
-      then RETURN (fn, M)
-      else do {
-        (fn, M) \<leftarrow> v;
-        M \<leftarrow> mop_list_set M n fn;
-        RETURN (fn, M)
-      }
-    }"
-
-definition fib_rec_mem_body :: "((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres) \<Rightarrow> ((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres)" where
-  "fib_rec_mem_body \<equiv> \<lambda>f (n, M). checkmem M n (do {
-    (*nres monad*)
-    if n < 2
-      then RETURN (1, M)
-      else do {
-        (f0, M) \<leftarrow> f (n-2, M);
-        (f1, M) \<leftarrow> f (n-1, M);
-        RETURN (f0 + f1, M)
-      }
-  })"
-
-definition fib_rec_mem :: "nat \<Rightarrow> int nres" where
-  "fib_rec_mem n \<equiv> do {
-    (*nres monad*)
-    (v, _) \<leftarrow> RECT fib_rec_mem_body (n, replicate (n+1) (-1));
-    RETURN v
-  }"
-
-sepref_definition fib_rec_mem1 is fib_rec_mem :: "nat_assn\<^sup>k \<rightarrow>\<^sub>a int_assn"
-  unfolding fib_rec_mem_def fib_rec_mem_body_def checkmem_def is_some_def
-  apply (rewrite in "RECT _ (_, \<hole>_)" array_fold_custom_of_list)
-  by sepref
-
-export_code fib_rec_mem1 checking SML_imp
-export_code fib_rec_mem1 in SML_imp module_name FibMem
-(*
-abbreviation "nres_bind \<equiv> Refine_Basic.bind"
-abbreviation "state_bind \<equiv> Monad.bind"
-*)
 
 datatype ('M, 'a) stateT = StateT (runStateT: "'M \<Rightarrow> ('a \<times> 'M) nres")
 term 0 (**)
@@ -109,18 +60,6 @@ definition checkmemT :: "nat \<Rightarrow> (tab, int) stateT \<Rightarrow> (tab,
       }
   }"
 
-definition fib_rec_mem_body' :: "((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres) \<Rightarrow> ((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres)" where
-  "fib_rec_mem_body' \<equiv> \<lambda>f (n, M). runStateT (checkmemT n (do {
-    (*stateT monad*)
-    if n<2
-      then returnT 1
-      else do {
-        f0 \<leftarrow> (StateT \<circ> (curry f)) (n-2);
-        f1 \<leftarrow> (StateT \<circ> (curry f)) (n-1);
-        returnT (f0 + f1)
-      }
-    })) M"
-
 definition cmem :: "tab \<Rightarrow> bool" where
   "cmem M \<equiv> \<forall>i. i<length M \<longrightarrow> is_some (M!i) \<longrightarrow> M!i=fib i"
 
@@ -149,6 +88,21 @@ context
   fixes N :: nat
 begin
 
+definition fib_spec :: "int nres" where
+  "fib_spec \<equiv> RETURN (fib N)"
+
+definition fib_rec_mem_body' :: "((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres) \<Rightarrow> ((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres)" where
+  "fib_rec_mem_body' \<equiv> \<lambda>f (n, M). runStateT (checkmemT n (do {
+    (*stateT monad*)
+    if n<2
+      then returnT 1
+      else do {
+        f0 \<leftarrow> (StateT \<circ> (curry f)) (n-2);
+        f1 \<leftarrow> (StateT \<circ> (curry f)) (n-1);
+        returnT (f0 + f1)
+      }
+    })) M"
+
 definition fib_rec_mem' :: "int nres" where
   "fib_rec_mem' \<equiv> do {
     (v, _) \<leftarrow> RECT fib_rec_mem_body' (N, replicate (N+1) (-1));
@@ -163,22 +117,21 @@ definition fib_mem_spec :: "(nat \<times> tab) \<Rightarrow> (int \<times> tab) 
 
 lemma checkmemT_vcg_rule:
   fixes n s M spec
-  assumes "param_isvalid n M \<Longrightarrow> runStateT s M \<le> fib_mem_spec (n, M)" "param_isvalid n M"
-  shows "runStateT (checkmemT n s) M \<le> fib_mem_spec (n, M)"
+  assumes "param_isvalid n M \<Longrightarrow> runStateT s M \<le> fib_mem_spec (n, M)"
+  shows "param_isvalid n M \<Longrightarrow> runStateT (checkmemT n s) M \<le> fib_mem_spec (n, M)"
   unfolding checkmemT_def bindT_def getT_def putT_def liftT_def
   apply auto
   subgoal
     apply (refine_vcg)
-    apply (unfold returnT_def RETURN_def fib_mem_spec_def)
-    using assms(2) apply (auto simp: param_isvalid_def elim: cmem_elim)
+    apply (unfold returnT_def RETURN_def fib_mem_spec_def param_isvalid_def)
+     apply (auto elim!: cmem_elim)
     done
   subgoal
     apply (refine_vcg)
-    subgoal using assms(2) by (auto simp: param_isvalid_def)
+    subgoal by (auto simp: param_isvalid_def)
     apply (unfold returnT_def RETURN_def fib_mem_spec_def)
-    apply refine_vcg
-    apply clarsimp
-    apply (intro assms(1)[unfolded fib_mem_spec_def, simplified] assms(2))
+    apply (refine_vcg order_trans[OF assms])
+    apply (auto simp add: fib_mem_spec_def)
     done
   done
 
@@ -191,7 +144,14 @@ lemma fib_rec_mem_refine_aux:
   "(RECT fib_rec_mem_body', fib_mem_spec) \<in> (br id (uncurry param_isvalid)) \<rightarrow> \<langle>Id\<times>\<^sub>rId\<rangle>nres_rel"
   apply (clarsimp simp: uncurry_def in_br_conv intro!: nres_relI)
   apply (rule RECT_rule[where V="fst <*mlex*> {}" and pre="uncurry param_isvalid"])
-  defer
+  subgoal
+    unfolding fib_rec_mem_body'_def
+    unfolding checkmemT_def getT_def putT_def bindT_def liftT_def curry_def returnT_def
+    unfolding blah
+    unfolding stateT.sel comp_def
+    apply auto
+    apply refine_mono
+    done
   subgoal by (simp add: wf_mlex)
   subgoal by (simp add: param_isvalid_def)
   subgoal premises prems for n M f nM
@@ -204,7 +164,7 @@ lemma fib_rec_mem_refine_aux:
       subgoal using prems(3) unfolding param_isvalid_def by simp
       subgoal unfolding fib_mem_spec_def returnT_def
         apply refine_vcg
-        apply auto
+        apply (auto simp: fib.simps)
         done
       done
     subgoal for n' M'
@@ -222,28 +182,24 @@ lemma fib_rec_mem_refine_aux:
           apply (refine_vcg order_trans[OF prems(2)])
           subgoal unfolding param_isvalid_def by auto
           subgoal by (auto simp: mlex_eq)
-          subgoal unfolding fib_mem_spec_def param_isvalid_def apply auto done
+          subgoal
+            unfolding fib_mem_spec_def param_isvalid_def apply auto
+            apply (rewrite in "_ + _ = \<hole>" fib.simps)
+            apply simp
+            done
           done
         done
       done
     done
-  subgoal
-    unfolding fib_rec_mem_body'_def checkmemT_def getT_def putT_def bindT_def liftT_def curry_def returnT_def
-    is_some_def
-    unfolding blah
-    unfolding stateT.sel comp_def
-    apply auto
-    apply refine_mono
-    done
   done
 
 corollary fib_rec_mem_refine:
-  "(fib_rec_mem', fib_spec N) \<in> \<langle>Id\<rangle>nres_rel"
+  "(fib_rec_mem', fib_spec) \<in> \<langle>Id\<rangle>nres_rel"
 proof (clarsimp intro!: nres_relI)
   have *:"local.param_isvalid n M \<Longrightarrow>
        REC\<^sub>T fib_rec_mem_body' (n, M) \<le> local.fib_mem_spec (n, M)" for n M
     using fib_rec_mem_refine_aux by (auto simp: uncurry_def in_br_conv dest!: fun_relD nres_relD)
-  show "fib_rec_mem' \<le> fib_spec N"
+  show "fib_rec_mem' \<le> fib_spec"
     apply (unfold fib_rec_mem'_def fib_spec_def)
     apply (refine_vcg order_trans[OF *])
     unfolding param_isvalid_def fib_mem_spec_def
@@ -251,6 +207,5 @@ proof (clarsimp intro!: nres_relI)
     done
   qed
 
-  
 end
 end
