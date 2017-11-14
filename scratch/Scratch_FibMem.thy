@@ -23,6 +23,7 @@ definition is_some :: "int \<Rightarrow> bool" where
 
 definition checkmem :: "tab \<Rightarrow> nat \<Rightarrow> (int \<times> tab) nres \<Rightarrow> (int \<times> tab) nres" where
   "checkmem M n v \<equiv> do {
+    (*nres monad*)
     fn \<leftarrow> mop_list_get M n;
     if is_some fn
       then RETURN (fn, M)
@@ -35,6 +36,7 @@ definition checkmem :: "tab \<Rightarrow> nat \<Rightarrow> (int \<times> tab) n
 
 definition fib_rec_mem_body :: "((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres) \<Rightarrow> ((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres)" where
   "fib_rec_mem_body \<equiv> \<lambda>f (n, M). checkmem M n (do {
+    (*nres monad*)
     if n < 2
       then RETURN (1, M)
       else do {
@@ -46,6 +48,7 @@ definition fib_rec_mem_body :: "((nat \<times> tab) \<Rightarrow> (int \<times> 
 
 definition fib_rec_mem :: "nat \<Rightarrow> int nres" where
   "fib_rec_mem n \<equiv> do {
+    (*nres monad*)
     (v, _) \<leftarrow> RECT fib_rec_mem_body (n, replicate (n+1) (-1));
     RETURN v
   }"
@@ -70,6 +73,7 @@ definition returnT :: "'a \<Rightarrow> ('M, 'a) stateT" where
 
 definition bindT :: "('M, 'a) stateT \<Rightarrow> ('a \<Rightarrow> ('M, 'b) stateT) \<Rightarrow> ('M, 'b) stateT" where
   "bindT s f \<equiv> StateT (\<lambda>M. do {
+    (*nres monad*)
     (v, M') \<leftarrow> runStateT s M;
     runStateT (f v) M'
   })"
@@ -84,10 +88,15 @@ definition putT :: "'M \<Rightarrow> ('M, unit) stateT" where
   "putT M \<equiv> StateT (\<lambda>M. RETURN ((), M))"
 
 definition liftT :: "'a nres \<Rightarrow> ('M, 'a) stateT" where
-  "liftT nr = StateT (\<lambda>M. do {v \<leftarrow> nr; RETURN (v, M)})"
+  "liftT nr = StateT (\<lambda>M. do {
+    (*nres monad*)
+    v \<leftarrow> nr;
+    RETURN (v, M)
+  })"
 
 definition checkmemT :: "nat \<Rightarrow> (tab, int) stateT \<Rightarrow> (tab, int) stateT" where
   "checkmemT n s \<equiv> do {
+    (*stateT monad*)
     M \<leftarrow> getT;
     Mn \<leftarrow> liftT (mop_list_get M n);
     if is_some Mn
@@ -102,11 +111,12 @@ definition checkmemT :: "nat \<Rightarrow> (tab, int) stateT \<Rightarrow> (tab,
 
 definition fib_rec_mem_body' :: "((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres) \<Rightarrow> ((nat \<times> tab) \<Rightarrow> (int \<times> tab) nres)" where
   "fib_rec_mem_body' \<equiv> \<lambda>f (n, M). runStateT (checkmemT n (do {
+    (*stateT monad*)
     if n<2
       then returnT 1
       else do {
-        f0 \<leftarrow> StateT (curry f (n-2));
-        f1 \<leftarrow> StateT (curry f (n-1));
+        f0 \<leftarrow> (StateT \<circ> (curry f)) (n-2);
+        f1 \<leftarrow> (StateT \<circ> (curry f)) (n-1);
         returnT (f0 + f1)
       }
     })) M"
@@ -124,6 +134,7 @@ lemma cmem_elim:
   obtains "fib i = M!i "
   using assms unfolding cmem_def by fastforce
 
+(*
 lemma cmem_update:
   "\<lbrakk>cmem M; v = fib i\<rbrakk> \<Longrightarrow> cmem (list_update M i v)"
   by (fastforce intro!: cmem_intro elim: cmem_elim simp: nth_list_update')
@@ -132,6 +143,7 @@ definition crel_vs :: "'a nres \<Rightarrow> (tab, 'a) stateT \<Rightarrow> bool
   "crel_vs nr s \<equiv> \<forall>M. cmem M \<longrightarrow> (case runStateT s M of
     FAILi \<Rightarrow> nr=FAIL
   | RES vM \<Rightarrow> RES (fst`vM) \<le> nr \<and> Ball (snd`vM) cmem)"
+*)
 
 context
   fixes N :: nat
@@ -219,7 +231,7 @@ lemma fib_rec_mem_refine_aux:
     unfolding fib_rec_mem_body'_def checkmemT_def getT_def putT_def bindT_def liftT_def curry_def returnT_def
     is_some_def
     unfolding blah
-    unfolding stateT.sel
+    unfolding stateT.sel comp_def
     apply auto
     apply refine_mono
     done
@@ -234,15 +246,9 @@ proof (clarsimp intro!: nres_relI)
   show "fib_rec_mem' \<le> fib_spec N"
     apply (unfold fib_rec_mem'_def fib_spec_def)
     apply (refine_vcg order_trans[OF *])
-      subgoal
-        unfolding param_isvalid_def
-        apply (auto simp add: is_some_def simp del: replicate_Suc intro!: cmem_intro)
-        done
-      subgoal
-        unfolding fib_mem_spec_def
-        apply auto
-        done
-      done
+    unfolding param_isvalid_def fib_mem_spec_def
+     apply (auto simp add: is_some_def simp del: replicate_Suc intro!: cmem_intro)
+    done
   qed
 
   
