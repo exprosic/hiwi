@@ -60,7 +60,9 @@ definition checkmemT :: "nat \<Rightarrow> (tab, int) stateT \<Rightarrow> (tab,
       }
   }"
 
-definition unpack_body :: "(('a \<Rightarrow> ('M, 'b) stateT) \<Rightarrow> ('a \<Rightarrow> ('M, 'b) stateT)) \<Rightarrow> ((('a \<times> 'M) \<Rightarrow> ('b \<times> 'M) nres) \<Rightarrow> (('a \<times> 'M) \<Rightarrow> ('b \<times> 'M) nres))" where
+type_synonym ('a, 'b) recursor = "('a \<Rightarrow> 'b) \<Rightarrow> ('a \<Rightarrow> 'b)"
+
+definition unpack_body :: "('a, ('M, 'b) stateT) recursor \<Rightarrow> ('a \<times> 'M, ('b \<times> 'M) nres) recursor" where
   "unpack_body body \<equiv> \<lambda>f (n, M). runStateT (body ((StateT oo curry) f) n) M"
 
 definition cmem :: "tab \<Rightarrow> bool" where
@@ -94,7 +96,7 @@ begin
 definition fib_spec :: "int nres" where
   "fib_spec \<equiv> RETURN (fib N)"
 
-definition fib_rec_mem_body' :: "(nat \<Rightarrow> (tab, int) stateT) \<Rightarrow> (nat \<Rightarrow> (tab, int) stateT)" where
+definition fib_rec_mem_body' :: "(nat, (tab, int) stateT) recursor" where
   "fib_rec_mem_body' \<equiv> \<lambda>f n. checkmemT n (do {
     (*stateT monad*)
     if n<2
@@ -210,4 +212,6 @@ proof (clarsimp intro!: nres_relI)
   qed
 
 end
+
+
 end
