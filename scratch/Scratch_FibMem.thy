@@ -111,12 +111,6 @@ definition fib_rec_mem_body' :: "((nat \<times> tab) \<Rightarrow> (int \<times>
       }
     })) M"
 
-definition fib_rec_mem' :: "nat \<Rightarrow> int nres" where
-  "fib_rec_mem' n \<equiv> do {
-    (v, _) \<leftarrow> RECT fib_rec_mem_body' (n, replicate (n+1) (-1));
-    RETURN v
-  }"
-
 definition cmem :: "tab \<Rightarrow> bool" where
   "cmem M \<equiv> \<forall>i. i<length M \<longrightarrow> is_some (M!i) \<longrightarrow> M!i=fib i"
 
@@ -143,8 +137,14 @@ context
   fixes N :: nat
 begin
 
+definition fib_rec_mem' :: "int nres" where
+  "fib_rec_mem' \<equiv> do {
+    (v, _) \<leftarrow> RECT fib_rec_mem_body' (N, replicate (N+1) (-1));
+    RETURN v
+  }"
+
 definition param_isvalid :: "nat \<Rightarrow> tab \<Rightarrow> bool" where
-  "param_isvalid n M \<equiv> n < length M \<and> length M = N \<and> cmem M"
+  "param_isvalid n M \<equiv> n < length M \<and> length M = N+1 \<and> cmem M"
 
 definition fib_mem_spec :: "(nat \<times> tab) \<Rightarrow> (int \<times> tab) nres" where
   "fib_mem_spec \<equiv> \<lambda>(n, M). SPEC (\<lambda>(v, M'). fib n = v \<and> param_isvalid n M')"
@@ -175,7 +175,8 @@ lemma blah:
   "(if b then fx else fy) x = (if b then fx x else fy x)"
   by auto
 
-lemma "(RECT fib_rec_mem_body', fib_mem_spec) \<in> (br id (uncurry param_isvalid)) \<rightarrow> \<langle>Id\<times>\<^sub>rId\<rangle>nres_rel"
+lemma fib_rec_mem_refine_aux:
+  "(RECT fib_rec_mem_body', fib_mem_spec) \<in> (br id (uncurry param_isvalid)) \<rightarrow> \<langle>Id\<times>\<^sub>rId\<rangle>nres_rel"
   apply (clarsimp simp: uncurry_def in_br_conv intro!: nres_relI)
   apply (rule RECT_rule[where V="fst <*mlex*> {}" and pre="uncurry param_isvalid"])
   defer
@@ -224,5 +225,26 @@ lemma "(RECT fib_rec_mem_body', fib_mem_spec) \<in> (br id (uncurry param_isvali
     done
   done
 
+corollary fib_rec_mem_refine:
+  "(fib_rec_mem', fib_spec N) \<in> \<langle>Id\<rangle>nres_rel"
+proof (clarsimp intro!: nres_relI)
+  have *:"local.param_isvalid n M \<Longrightarrow>
+       REC\<^sub>T fib_rec_mem_body' (n, M) \<le> local.fib_mem_spec (n, M)" for n M
+    using fib_rec_mem_refine_aux by (auto simp: uncurry_def in_br_conv dest!: fun_relD nres_relD)
+  show "fib_rec_mem' \<le> fib_spec N"
+    apply (unfold fib_rec_mem'_def fib_spec_def)
+    apply (refine_vcg order_trans[OF *])
+      subgoal
+        unfolding param_isvalid_def
+        apply (auto simp add: is_some_def simp del: replicate_Suc intro!: cmem_intro)
+        done
+      subgoal
+        unfolding fib_mem_spec_def
+        apply auto
+        done
+      done
+  qed
+
+  
 end
 end
