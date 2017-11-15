@@ -102,7 +102,7 @@ definition fib_rec_mem_body' :: "(nat, (tab, int) stateT) recursor" where
         f1 \<leftarrow> f (n-1);
         returnT (f0 + f1)
       }
-    })"
+  })"
 
 definition fib_rec_mem' :: "int nres" where
   "fib_rec_mem' \<equiv> do {
@@ -115,7 +115,7 @@ definition param_isvalid :: "nat \<Rightarrow> tab \<Rightarrow> bool" where
   "param_isvalid n M \<equiv> n < length M \<and> length M = N+1 \<and> cmem M"
 
 definition fib_mem_spec :: "(nat \<times> tab) \<Rightarrow> (int \<times> tab) nres" where
-  "fib_mem_spec \<equiv> \<lambda>(n, M). SPEC (\<lambda>(v, M'). fib n = v \<and> param_isvalid n M')"
+  "fib_mem_spec \<equiv> \<lambda>(n, M). SPEC (\<lambda>(v, M'). fib n = v \<and> length M' = N+1 \<and> cmem M')"
 
 lemma checkmemT_vcg_rule:
   fixes n s M spec
@@ -165,7 +165,7 @@ lemma fib_rec_mem_refine_aux:
       subgoal using prems(3) unfolding param_isvalid_def by simp
       subgoal unfolding fib_mem_spec_def returnT_def
         apply refine_vcg
-        apply (auto simp: fib.simps)
+        apply (auto simp: fib.simps param_isvalid_def)
         done
       done
     subgoal for n' M'
