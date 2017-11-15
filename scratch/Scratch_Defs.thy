@@ -119,4 +119,8 @@ term list_custom_empty
 
 term flatf_gfp
 term flatf_ord.fixp
+term flatf_lub
+term flatf_ord
+term fun_ord
+term flat_ord
 term trimono

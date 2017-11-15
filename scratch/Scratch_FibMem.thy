@@ -12,10 +12,6 @@ declare fib.simps[simp del]
 
 type_synonym tab = "int option list"
 
-(*Since fib n \<ge> 0, negative value is used here to represent None*)
-definition is_some :: "int \<Rightarrow> bool" where
-  "is_some v \<equiv> v \<ge> 0"
-
 datatype ('M, 'a) stateT = StateT (runStateT: "'M \<Rightarrow> ('a \<times> 'M) nres")
 term 0 (**)
 
@@ -36,7 +32,7 @@ definition getT :: "('M, 'M) stateT" where
   "getT \<equiv> StateT (\<lambda>M. RETURN (M, M))"
 
 definition putT :: "'M \<Rightarrow> ('M, unit) stateT" where
-  "putT M \<equiv> StateT (\<lambda>M. RETURN ((), M))"
+  "putT M \<equiv> StateT (\<lambda>_. RETURN ((), M))"
 
 definition liftT :: "'a nres \<Rightarrow> ('M, 'a) stateT" where
   "liftT nr = StateT (\<lambda>M. do {
@@ -71,18 +67,18 @@ definition cmem :: "tab \<Rightarrow> bool" where
 lemma cmem_intro:
   assumes "\<And>i v. i<length M \<Longrightarrow> M!i = Some v \<Longrightarrow> v=fib i"
   shows "cmem M"
-  using assms unfolding cmem_def is_some_def by fastforce
+  using assms unfolding cmem_def by fastforce
 
 lemma cmem_elim:
   assumes "cmem M" "i < length M" "M!i = Some v"
   obtains "v = fib i"
   using assms unfolding cmem_def by fastforce
 
-(*
 lemma cmem_update:
-  "\<lbrakk>cmem M; v = fib i\<rbrakk> \<Longrightarrow> cmem (list_update M i v)"
-  by (fastforce intro!: cmem_intro elim: cmem_elim simp: nth_list_update')
+  "\<lbrakk>cmem M; v = fib i\<rbrakk> \<Longrightarrow> cmem (list_update M i (Some v))"
+  by (fastforce intro!: cmem_intro elim: cmem_elim simp: nth_list_update' split: if_splits)
 
+(*
 definition crel_vs :: "'a nres \<Rightarrow> (tab, 'a) stateT \<Rightarrow> bool" where
   "crel_vs nr s \<equiv> \<forall>M. cmem M \<longrightarrow> (case runStateT s M of
     FAILi \<Rightarrow> nr=FAIL
@@ -131,7 +127,7 @@ lemma checkmemT_vcg_rule:
   subgoal
     apply (unfold returnT_def RETURN_def fib_mem_spec_def param_isvalid_def)
     apply (refine_vcg order_trans[OF assms])
-      apply (auto simp: fib_mem_spec_def param_isvalid_def)
+      apply (auto simp: fib_mem_spec_def param_isvalid_def intro!: cmem_update)
     done
   subgoal
     apply (refine_vcg)
@@ -207,7 +203,7 @@ proof (clarsimp intro!: nres_relI)
     apply (unfold fib_rec_mem'_def fib_spec_def)
     apply (refine_vcg order_trans[OF *])
     unfolding param_isvalid_def fib_mem_spec_def
-     apply (auto simp add: is_some_def simp del: replicate_Suc intro!: cmem_intro)
+     apply (auto simp del: replicate_Suc intro!: cmem_intro)
     done
   qed
 
