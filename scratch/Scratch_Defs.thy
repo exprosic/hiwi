@@ -124,3 +124,6 @@ term flatf_ord
 term fun_ord
 term flat_ord
 term trimono
+term br
+term Domain
+term "(R\<inverse>``X)"

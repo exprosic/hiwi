@@ -70,8 +70,8 @@ lemma cmem_intro:
   using assms unfolding cmem_def by fastforce
 
 lemma cmem_elim:
-  assumes "cmem M" "i < length M" "M!i = Some v"
-  obtains "v = fib i"
+  assumes "cmem M" "i < length M"
+  obtains "M!i = Some (fib i)" | "M!i = None"
   using assms unfolding cmem_def by fastforce
 
 lemma cmem_update:
@@ -88,9 +88,6 @@ definition crel_vs :: "'a nres \<Rightarrow> (tab, 'a) stateT \<Rightarrow> bool
 context
   fixes N :: nat
 begin
-
-definition fib_spec :: "int nres" where
-  "fib_spec \<equiv> RETURN (fib N)"
 
 definition fib_rec_mem_body' :: "(nat, (tab, int) stateT) recursor" where
   "fib_rec_mem_body' \<equiv> \<lambda>f n. checkmemT n (do {
@@ -111,12 +108,171 @@ definition fib_rec_mem' :: "int nres" where
     RETURN v
   }"
 
-definition param_isvalid :: "nat \<Rightarrow> tab \<Rightarrow> bool" where
-  "param_isvalid n M \<equiv> n < length M \<and> length M = N+1 \<and> cmem M"
+definition param_isvalid :: "nat \<Rightarrow> bool" where
+  "param_isvalid n \<equiv> n < N+1"
+
+definition mem_isvalid :: "tab \<Rightarrow> bool" where
+  "mem_isvalid M \<equiv> cmem M \<and> length M = N+1"
+
+lemma mem_param_isvalid_elim:
+  assumes "mem_isvalid M" "param_isvalid n"
+  obtains "n < length M \<and> M!n = Some (fib n)" | "n < length M \<and> M!n = None"
+  using assms unfolding mem_isvalid_def param_isvalid_def by (fastforce elim: cmem_elim)
 
 definition fib_mem_spec :: "(nat \<times> tab) \<Rightarrow> (int \<times> tab) nres" where
   "fib_mem_spec \<equiv> \<lambda>(n, M). SPEC (\<lambda>(v, M'). fib n = v \<and> length M' = N+1 \<and> cmem M')"
 
+definition crel_nt :: "'a nres \<Rightarrow> (tab, 'a) stateT \<Rightarrow> bool" where
+  "crel_nt nv t \<equiv>
+    \<forall>M. mem_isvalid M \<longrightarrow>
+      (let np = runStateT t M in
+        do {(v, M') \<leftarrow> np; ASSERT (mem_isvalid M'); RETURN v} \<le> nv)"
+
+lemma crel_nt_intro:
+  fixes nv t
+  assumes "\<And>M. mem_isvalid M \<Longrightarrow> do {(v, M') \<leftarrow> runStateT t M; ASSERT (mem_isvalid M'); RETURN v} \<le> nv"
+  shows "crel_nt nv t"
+  unfolding crel_nt_def using assms by auto
+
+lemma crel_nt_dest:
+  assumes "crel_nt nv t" "mem_isvalid M"
+  shows "do {(v, M') \<leftarrow> runStateT t M; ASSERT (mem_isvalid M'); RETURN v} \<le> nv"
+  using assms(1)[unfolded crel_nt_def, rule_format, OF assms(2)] by auto
+
+definition fib_spec_at :: "nat \<Rightarrow> int nres" where
+  "fib_spec_at n \<equiv> do {
+    ASSERT (param_isvalid n);
+    RETURN (fib n)
+  }"
+
+definition fib_spec :: "int nres" where
+  "fib_spec \<equiv> RETURN (fib N)"
+
+lemma "fib_spec = fib_spec_at N"
+  unfolding fib_spec_def fib_spec_at_def param_isvalid_def by auto
+
+lemma crel_nt_getT:
+  assumes "\<And>M. mem_isvalid M \<Longrightarrow> crel_nt nr (tf M)"
+  shows "crel_nt nr (getT \<bind> tf)"
+  using assms by (fastforce simp: getT_def bindT_def intro: crel_nt_intro dest: crel_nt_dest)
+
+lemma crel_nt_putT:
+  assumes "crel_nt nr t" "mem_isvalid M"
+  shows "crel_nt nr (putT M \<then> t)"
+  using assms by (fastforce simp: putT_def bindT_def intro: crel_nt_intro dest: crel_nt_dest)
+
+lemma crel_nt_liftT:
+  assumes "nr1 \<le> nr0"
+  shows "crel_nt nr0 (liftT nr1)"
+  using assms by (fastforce simp: liftT_def intro: crel_nt_intro)
+
+lemma mem_isvalid_nres:
+  assumes "mem_isvalid M" "param_isvalid n"
+  shows "mop_list_get M n \<le> SPEC (\<lambda>v. v=None \<or> v=Some (fib n))"
+  using assms by (refine_vcg) (auto elim: mem_param_isvalid_elim)
+
+lemma crel_nt_bind_pure:
+  assumes "crel_nt (SPEC \<Phi>) t" "\<And>v. \<Phi> v \<Longrightarrow> crel_nt nr (tf v)"
+  shows "crel_nt nr (t \<bind> tf)"
+  unfolding bindT_def
+  apply (rule crel_nt_intro)
+  apply (unfold stateT.sel)
+  subgoal premises prems
+    thm crel_nt_dest[OF assms(1) prems]
+    thm crel_nt_dest[OF assms(2) prems]
+    thm bind_le_shift bind_rule_complete
+    apply (unfold bind_le_shift)
+    apply (rule crel_nt_dest[OF assms(1) prems, unfolded bind_le_shift, THEN order_trans])
+    apply auto
+    unfolding ASSERT_le_iff
+    apply auto
+    subgoal premises prems'
+      thm prems'
+      apply (rule crel_nt_dest[OF assms(2) prems'(2), OF prems'(3), unfolded bind_le_shift, THEN order_trans])
+      apply auto
+      apply (fact prems'(1))
+      done
+    done
+  done
+
+lemma crel_nt_spec_at_intro:
+  assumes "param_isvalid n \<Longrightarrow> crel_nt (RETURN (fib n)) t"
+  shows "crel_nt (fib_spec_at n) t"
+  unfolding fib_spec_at_def
+  apply (rule crel_nt_intro)
+  apply (auto simp: bind_le_shift)
+  apply (unfold pw_bind_nofail)
+  apply auto
+  apply (unfold pw_ASSERT)
+  apply (frule assms)
+  subgoal premises prems
+    apply (rule crel_nt_dest[OF prems(3) prems(1), unfolded bind_le_shift, THEN order_trans])
+    apply auto
+    apply (refine_vcg)
+     apply auto
+    unfolding ireturn_eq
+    unfolding assert_bind_spec_conv
+    apply auto
+    done
+  done
+
+lemma crel_nt_spec_at_dest:
+  assumes "crel_nt (fib_spec_at n) t" "param_isvalid n"
+  shows "crel_nt (RETURN (fib n)) t"
+  apply (rule crel_nt_intro)
+  apply (frule crel_nt_dest[OF assms(1)])
+  unfolding fib_spec_at_def
+  unfolding le_ASSERT_iff
+  using assms(2) apply auto
+  done
+
+lemma crel_nt_returnT:
+  "crel_nt (RETURN v) (returnT v)"
+  unfolding returnT_def by (fastforce intro: crel_nt_intro)
+
+lemma crel_nt_checkmemT:
+  assumes "crel_nt (fib_spec_at n) t"
+  shows "crel_nt (fib_spec_at n) (checkmemT n t)"
+  apply (rule crel_nt_spec_at_intro)
+  apply (unfold checkmemT_def)
+  apply (rule crel_nt_getT)
+  apply (rule crel_nt_bind_pure)
+   apply (rule crel_nt_liftT)
+   apply (rule mem_isvalid_nres)
+    apply (assumption)
+   apply (assumption)
+  apply auto
+  defer
+   apply (rule crel_nt_returnT)
+  apply (rule crel_nt_bind_pure)
+  apply (rule assms[THEN crel_nt_spec_at_dest, unfolded ireturn_eq])
+   apply assumption
+  apply clarify
+  apply (rule crel_nt_bind_pure)
+   apply (rule crel_nt_liftT)
+   apply (unfold assert_bind_spec_conv)
+   apply (unfold mem_isvalid_def param_isvalid_def)[1]
+  defer
+   apply (rule crel_nt_putT)
+    apply (rule crel_nt_returnT)
+   apply assumption
+  apply (unfold mem_isvalid_def)
+  apply auto
+  apply (rule cmem_update)
+   apply auto
+  done
+
+  
+  thm assert_bind_spec_conv
+  oops
+  thm Collect_mem_eq
+
+
+  term 0 (*
+lemma
+  assumes "crel_nt nr0 nr"
+  shows "crel_nt nr (liftT nr0 \<bind> tf)"
+term 0 (*
 lemma checkmemT_vcg_rule:
   fixes n s M spec
   assumes "param_isvalid n M \<Longrightarrow> runStateT s M \<le> fib_mem_spec (n, M)"
