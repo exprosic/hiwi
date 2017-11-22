@@ -15,6 +15,49 @@ type_synonym tab = "int option list"
 datatype ('M, 'a) stateT = StateT (runStateT: "'M \<Rightarrow> ('a \<times> 'M) nres")
 term 0 (**)
 
+instantiation stateT :: (type, type) complete_lattice
+begin
+
+fun less_eq_stateT where
+  "StateT (f0) \<le> StateT (f1) \<longleftrightarrow> f0 \<le> f1"
+
+fun less_stateT where
+  "StateT (f0) < StateT (f1) \<longleftrightarrow> f0 < f1"
+
+fun sup_stateT where
+  "sup (StateT f0) (StateT f1) = StateT (\<lambda>M. sup (f0 M) (f1 M))"
+
+fun inf_stateT where
+  "inf (StateT f0) (StateT f1) = StateT (\<lambda>M. inf (f0 M) (f1 M))"
+
+definition "Sup ts \<equiv> StateT (\<lambda>M. Sup {runStateT t M | t. t \<in> ts})"
+definition "Inf ts \<equiv> StateT (\<lambda>M. Inf {runStateT t M | t. t \<in> ts})"
+
+definition "bot \<equiv> StateT (\<lambda>M. bot)"
+definition "top \<equiv> StateT (\<lambda>M. top)"
+
+instance
+  apply (intro_classes)
+  unfolding Sup_stateT_def Inf_stateT_def bot_stateT_def top_stateT_def
+  subgoal for x y by (cases x; cases y; auto)
+  subgoal for x by (cases x; auto)
+  subgoal for x y z by (cases x; cases y; cases z; auto)
+  subgoal for x y by (cases x; cases y; auto)
+  subgoal for x y by (cases x; cases y; auto simp: le_fun_def)
+  subgoal for x y by (cases x; cases y; auto simp: le_fun_def)
+  subgoal for x y z by (cases x; cases y; cases z; auto simp: le_fun_def)
+  subgoal for x y by (cases x; cases y; auto simp: le_fun_def)
+  subgoal for x y by (cases x; cases y; auto simp: le_fun_def)
+  subgoal for x y z by (cases x; cases y; cases z; auto simp: le_fun_def)
+  subgoal for x A by (cases x; force intro: Inf_lower simp: le_fun_def)
+  subgoal premises prems for A z by (cases z; force intro: Inf_greatest dest!: prems elim!: less_eq_stateT.elims simp: le_funD le_fun_def)
+  subgoal for x A by (cases x; force intro: Sup_upper simp: le_fun_def)  
+  subgoal premises prems for A z by (cases z; force intro: Sup_least dest!: prems elim!: less_eq_stateT.elims simp: le_funD le_fun_def)
+  subgoal by auto
+  subgoal by auto
+  done
+end    
+
 definition returnT :: "'a \<Rightarrow> ('M, 'a) stateT" where
   "returnT a \<equiv> StateT (\<lambda>M. RETURN (a, M))"
 
@@ -114,6 +157,12 @@ definition param_isvalid :: "nat \<Rightarrow> bool" where
 definition mem_isvalid :: "tab \<Rightarrow> bool" where
   "mem_isvalid M \<equiv> cmem M \<and> length M = N+1"
 
+lemma mem_isvalid_update:
+  assumes "mem_isvalid M" "v = Some (fib n)"
+  shows "mem_isvalid (list_update M n v)"
+  using assms unfolding mem_isvalid_def
+  by (fastforce intro: cmem_intro simp: nth_list_update' elim: cmem_elim split: if_splits)
+
 lemma mem_param_isvalid_elim:
   assumes "mem_isvalid M" "param_isvalid n"
   obtains "n < length M \<and> M!n = Some (fib n)" | "n < length M \<and> M!n = None"
@@ -122,21 +171,20 @@ lemma mem_param_isvalid_elim:
 definition fib_mem_spec :: "(nat \<times> tab) \<Rightarrow> (int \<times> tab) nres" where
   "fib_mem_spec \<equiv> \<lambda>(n, M). SPEC (\<lambda>(v, M'). fib n = v \<and> length M' = N+1 \<and> cmem M')"
 
-definition crel_nt :: "'a nres \<Rightarrow> (tab, 'a) stateT \<Rightarrow> bool" where
-  "crel_nt nv t \<equiv>
+definition crel_nt :: "('a nres \<Rightarrow> 'b nres \<Rightarrow> bool) \<Rightarrow> 'a nres \<Rightarrow> (tab, 'b) stateT \<Rightarrow> bool" where
+  "crel_nt R nv t \<equiv>
     \<forall>M. mem_isvalid M \<longrightarrow>
-      (let np = runStateT t M in
-        do {(v, M') \<leftarrow> np; ASSERT (mem_isvalid M'); RETURN v} \<le> nv)"
+      R nv (do {(v, M') \<leftarrow> runStateT t M; ASSERT (mem_isvalid M'); RETURN v})"
 
 lemma crel_nt_intro:
   fixes nv t
-  assumes "\<And>M. mem_isvalid M \<Longrightarrow> do {(v, M') \<leftarrow> runStateT t M; ASSERT (mem_isvalid M'); RETURN v} \<le> nv"
-  shows "crel_nt nv t"
+  assumes "\<And>M. mem_isvalid M \<Longrightarrow> R nv (do {(v, M') \<leftarrow> runStateT t M; ASSERT (mem_isvalid M'); RETURN v})"
+  shows "crel_nt R nv t"
   unfolding crel_nt_def using assms by auto
 
 lemma crel_nt_dest:
-  assumes "crel_nt nv t" "mem_isvalid M"
-  shows "do {(v, M') \<leftarrow> runStateT t M; ASSERT (mem_isvalid M'); RETURN v} \<le> nv"
+  assumes "crel_nt R nv t" "mem_isvalid M"
+  shows "R nv (do {(v, M') \<leftarrow> runStateT t M; ASSERT (mem_isvalid M'); RETURN v})"
   using assms(1)[unfolded crel_nt_def, rule_format, OF assms(2)] by auto
 
 definition fib_spec_at :: "nat \<Rightarrow> int nres" where
@@ -152,18 +200,18 @@ lemma "fib_spec = fib_spec_at N"
   unfolding fib_spec_def fib_spec_at_def param_isvalid_def by auto
 
 lemma crel_nt_getT:
-  assumes "\<And>M. mem_isvalid M \<Longrightarrow> crel_nt nr (tf M)"
-  shows "crel_nt nr (getT \<bind> tf)"
+  assumes "\<And>M. mem_isvalid M \<Longrightarrow> crel_nt R nr (tf M)"
+  shows "crel_nt R nr (getT \<bind> tf)"
   using assms by (fastforce simp: getT_def bindT_def intro: crel_nt_intro dest: crel_nt_dest)
 
 lemma crel_nt_putT:
-  assumes "crel_nt nr t" "mem_isvalid M"
-  shows "crel_nt nr (putT M \<then> t)"
+  assumes "crel_nt R nr t" "mem_isvalid M"
+  shows "crel_nt R nr (putT M \<then> t)"
   using assms by (fastforce simp: putT_def bindT_def intro: crel_nt_intro dest: crel_nt_dest)
 
 lemma crel_nt_liftT:
-  assumes "nr1 \<le> nr0"
-  shows "crel_nt nr0 (liftT nr1)"
+  assumes "R nr0 nr1"
+  shows "crel_nt R nr0 (liftT nr1)"
   using assms by (fastforce simp: liftT_def intro: crel_nt_intro)
 
 lemma mem_isvalid_nres:
@@ -172,8 +220,8 @@ lemma mem_isvalid_nres:
   using assms by (refine_vcg) (auto elim: mem_param_isvalid_elim)
 
 lemma crel_nt_bind_pure:
-  assumes "crel_nt (SPEC \<Phi>) t" "\<And>v. \<Phi> v \<Longrightarrow> crel_nt nr (tf v)"
-  shows "crel_nt nr (t \<bind> tf)"
+  assumes "crel_nt greater_eq (SPEC \<Phi>) t" "\<And>v. \<Phi> v \<Longrightarrow> crel_nt greater_eq nr (tf v)"
+  shows "crel_nt greater_eq nr (t \<bind> tf)"
   unfolding bindT_def
   apply (rule crel_nt_intro)
   apply (unfold stateT.sel)
@@ -196,8 +244,8 @@ lemma crel_nt_bind_pure:
   done
 
 lemma crel_nt_spec_at_intro:
-  assumes "param_isvalid n \<Longrightarrow> crel_nt (RETURN (fib n)) t"
-  shows "crel_nt (fib_spec_at n) t"
+  assumes "param_isvalid n \<Longrightarrow> crel_nt greater_eq (RETURN (fib n)) t"
+  shows "crel_nt greater_eq(fib_spec_at n) t"
   unfolding fib_spec_at_def
   apply (rule crel_nt_intro)
   apply (auto simp: bind_le_shift)
@@ -217,8 +265,8 @@ lemma crel_nt_spec_at_intro:
   done
 
 lemma crel_nt_spec_at_dest:
-  assumes "crel_nt (fib_spec_at n) t" "param_isvalid n"
-  shows "crel_nt (RETURN (fib n)) t"
+  assumes "crel_nt greater_eq (fib_spec_at n) t" "param_isvalid n"
+  shows "crel_nt greater_eq (RETURN (fib n)) t"
   apply (rule crel_nt_intro)
   apply (frule crel_nt_dest[OF assms(1)])
   unfolding fib_spec_at_def
@@ -227,12 +275,12 @@ lemma crel_nt_spec_at_dest:
   done
 
 lemma crel_nt_returnT:
-  "crel_nt (RETURN v) (returnT v)"
+  "crel_nt greater_eq (RETURN v) (returnT v)"
   unfolding returnT_def by (fastforce intro: crel_nt_intro)
 
 lemma crel_nt_checkmemT:
-  assumes "crel_nt (fib_spec_at n) t"
-  shows "crel_nt (fib_spec_at n) (checkmemT n t)"
+  assumes "crel_nt greater_eq (fib_spec_at n) t"
+  shows "crel_nt greater_eq (fib_spec_at n) (checkmemT n t)"
   apply (rule crel_nt_spec_at_intro)
   apply (unfold checkmemT_def)
   apply (rule crel_nt_getT)
@@ -262,12 +310,233 @@ lemma crel_nt_checkmemT:
    apply auto
   done
 
-  
-  thm assert_bind_spec_conv
+lemma "runStateT (RECT body n) M = RECT (unpack_body body) (n, M)"
   oops
-  thm Collect_mem_eq
 
+lemma "trimono body \<longleftrightarrow> trimono (unpack_body body)"
+  apply (intro iffI)
+  subgoal premises prems
+    apply (unfold unpack_body_def comp_def)
+    apply (rule trimonoI)
+     apply (unfold monotone_def mono_def)
+     apply auto
+    thm trimonoD[OF prems]
+    oops
 
+definition crel_vt :: "('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> (tab, 'b) stateT \<Rightarrow> bool" where
+  "crel_vt R v t \<equiv> \<forall>M. mem_isvalid M \<longrightarrow>
+    do {(v', M') \<leftarrow> runStateT t M; ASSERT (mem_isvalid M'); RETURN (R v v')} \<le> RETURN True"
+
+lemma crel_vt_intro:
+  assumes "\<And>M. mem_isvalid M \<Longrightarrow>
+    runStateT t M \<le> SPEC (\<lambda>(v', M'). R v v' \<and> mem_isvalid M')"
+  shows "crel_vt R v t"
+  unfolding crel_vt_def
+  apply (intro allI impI)
+  unfolding RETURN_SPEC_conv
+  unfolding bind_rule_complete
+  unfolding case_prod_bind_simp
+  unfolding assert_bind_spec_conv
+  unfolding SPEC_eq_is_RETURN
+  unfolding nres_order_simps
+  unfolding eq_True
+  apply (subst conj_commute)
+  apply (fact assms)
+  done
+
+lemma crel_vt_dest:
+  assumes "crel_vt R v t" "mem_isvalid M"
+  shows "runStateT t M \<le> SPEC (\<lambda>(v', M'). R v v' \<and> mem_isvalid M')"
+  apply (insert assms)
+  unfolding crel_vt_def
+  apply (erule allE impE)+
+   apply (assumption)
+  unfolding RETURN_SPEC_conv
+  unfolding bind_rule_complete
+  unfolding case_prod_bind_simp
+  unfolding assert_bind_spec_conv
+  unfolding SPEC_eq_is_RETURN
+  unfolding nres_order_simps
+  unfolding eq_True
+  apply (erule order_trans)
+  apply (rule SPEC_rule)
+  apply clarify
+  done
+
+lemma crel_vt_getT:
+  assumes "\<And>M. mem_isvalid M \<Longrightarrow> crel_vt R v (tf M)"
+  shows "crel_vt R v (getT \<bind> tf)"
+  apply (rule crel_vt_intro)
+  unfolding getT_def
+  unfolding bindT_def
+  unfolding stateT.sel
+  unfolding nres_monad1
+  unfolding prod.case
+  apply (frule assms)
+  apply (drule crel_vt_dest)
+   apply assumption+
+  done
+
+lemma crel_vt_putT:
+  assumes "crel_vt R v t" "mem_isvalid M"
+  shows "crel_vt R v (putT M \<then> t)"
+  apply (rule crel_vt_intro)
+  unfolding putT_def
+  unfolding bindT_def
+  unfolding stateT.sel
+  unfolding nres_monad1
+  unfolding prod.case
+  apply (rule crel_vt_dest[OF assms])
+  done
+
+lemma crel_vt_bindT:
+  assumes "crel_vt (op =) v t" "crel_vt R (f v) (tf v)"
+  shows "crel_vt R (f v) (t \<bind> tf)"
+  apply (rule crel_vt_intro)
+  unfolding bindT_def
+  unfolding stateT.sel
+  unfolding bind_rule_complete
+  unfolding case_prod_bind_simp
+  apply (drule crel_vt_dest[OF assms(1)])
+  apply (erule order_trans)
+  apply (rule SPEC_rule)
+  apply clarify
+  apply (drule crel_vt_dest[OF assms(2)])
+  apply assumption
+  done
+
+lemma mop_list_aux:
+  assumes "mem_isvalid M" "param_isvalid n"
+  shows "mop_list_get M n = RETURN (M!n)"
+    "mop_list_set M n (Some (fib n)) = RETURN (list_update M n (Some (fib n)))"
+    "mop_list_set M n None = RETURN (list_update M n None)"
+  using assms by (auto elim: mem_param_isvalid_elim)
+
+lemma crel_vt_liftT:
+  assumes "nr \<le> RETURN v"
+  shows "crel_vt (op =) v (liftT nr)"
+  apply (rule crel_vt_intro)
+  unfolding liftT_def
+  unfolding stateT.sel
+  unfolding bind_rule_complete
+  apply (rule assms[THEN order_trans])
+  unfolding RETURN_SPEC_conv
+  apply (rule SPEC_rule)
+  apply (rule SPEC_rule)
+  apply clarify
+  done
+
+lemma crel_vt_returnT:
+  assumes "R v v'"
+  shows "crel_vt R v (returnT v')"
+  apply (rule crel_vt_intro)
+  unfolding returnT_def
+  unfolding stateT.sel
+  apply (rule RETURN_rule)
+  apply clarify
+  apply (rule assms)
+  done
+
+lemma crel_vt_checkmemT:
+  assumes "crel_vt (op =) (fib n) t" "param_isvalid n"
+  shows "crel_vt (op =) (fib n) (checkmemT n t)"
+  unfolding checkmemT_def
+  apply (rule crel_vt_getT)
+  apply (rule crel_vt_bindT)
+  apply (rule crel_vt_liftT)
+  unfolding mop_list_aux[OF _ assms(2)]
+  apply (rule plain_RETURN)
+  apply (split option.split)
+  apply (intro conjI; intro impI allI)
+  subgoal
+    apply (rule crel_vt_bindT)
+     apply (rule assms(1))
+    apply (rule crel_vt_bindT)
+     apply (rule crel_vt_liftT)
+    unfolding mop_list_aux[OF _ assms(2)]
+     apply (rule plain_RETURN)
+    apply (rule crel_vt_putT)
+     apply (rule crel_vt_returnT)
+     apply (rule refl)
+    apply (rule mem_isvalid_update)
+     apply assumption
+    apply (rule refl)
+    done
+  subgoal
+    apply (rule crel_vt_returnT)
+    using assms(2) by (fastforce elim: mem_param_isvalid_elim)
+  done
+
+lemma "trimono bodyT \<Longrightarrow> trimono (unpack_body bodyT)"
+  apply (rule trimonoI)
+  subgoal
+    apply (rule monotoneI)
+    unfolding fun_ord_def
+    apply (intro allI)
+    sorry
+  subgoal
+    apply (rule monoI)
+    apply (rule le_funI)
+    apply (drule le_funD)
+    sorry
+  oops
+
+lemma flat_ge_stateT:
+  "flat_ge (StateT t0) (StateT t1) \<Longrightarrow> flatf_ge t0 t1"
+  apply (rule fun_ordI)
+  apply (rule flat_ordI)
+  unfolding flat_ord_def
+  unfolding top_stateT_def
+  by auto
+
+lemma
+  assumes "trimono bodyT"
+  shows "trimono (unpack_body bodyT)"
+  apply (rule trimonoI)
+  subgoal
+    thm trimonoD_flatf_ge[OF assms, THEN monotoneD]
+    apply (rule monotoneI)
+    unfolding unpack_body_def
+    apply (rule fun_ordI)
+    apply (split prod.splits)
+    apply clarify
+    apply (rule fun_ordD[of flat_ge]) back
+    apply (rule flat_ge_stateT)
+    unfolding stateT.collapse
+    apply (rule fun_ordD[of flat_ge]) back
+    apply (rule trimonoD_flatf_ge[OF assms, THEN monotoneD])
+    unfolding comp_def
+    apply (rule fun_ordI)
+    apply (rule flat_ordI)
+    unfolding curry_def top_stateT_def
+    
+    unfolding stateT.inject
+    apply (rule ext)
+    apply (drule fun_ordD[of "flat_ord FAIL"])
+    
+    sorry
+  subgoal
+    apply (rule monoI)
+    unfolding unpack_body_def
+    apply (rule le_funI)
+    apply (split prod.splits)
+    apply clarify
+    apply (rule le_funD) back
+    unfolding less_eq_stateT.simps[symmetric]
+    unfolding stateT.collapse
+    apply (rule le_funD) back
+    apply (rule trimonoD_mono[OF assms, THEN monoD])
+    unfolding comp_def
+    apply (rule le_funI)
+    unfolding less_eq_stateT.simps
+    unfolding curry_def
+    apply (rule le_funI)
+    apply (drule le_funD)
+    apply assumption
+    done
+
+  oops
+    
   term 0 (*
 lemma
   assumes "crel_nt nr0 nr"

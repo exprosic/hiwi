@@ -113,7 +113,7 @@ lemma "bot::'a nres \<equiv> RES {}" unfolding Refine_Basic.bot_nres_def .
 
 term op_list_get
 term op_list_set
-find_theorems op_list_set term 0
+
 thm HOL_list.fold_custom_empty
 term list_custom_empty
 
@@ -127,3 +127,76 @@ term trimono
 term br
 term Domain
 term "(R\<inverse>``X)"
+term RECT
+term lfp
+term gfp
+term mono
+term flat_mono_ge
+term flatf_mono_ge
+term flat_mono
+term flatf_mono
+term monotone
+thm RECT_rule_arb
+thm wf_fixp_induct
+thm wf_induct_rule
+thm wf_induct
+thm gfp_eq_flatf_gfp
+thm lfp_unfold
+
+thm wf_fixp_induct
+thm wf_induct_rule
+thm wf_induct
+thm RECT_unfold
+thm flatf_ord.fixp_unfold
+thm ccpo.fixp_unfold
+thm trimonoD_flatf_ge
+
+
+lemma RECT_rule_arb:
+  assumes M: "trimono body"
+  assumes WF: "wf (V::('x\<times>'x) set)"
+  assumes I0: "pre (arb::'arb) (x::'x)"
+  assumes IS: "\<And>f arb x. \<lbrakk> 
+      \<And>arb' x'. \<lbrakk>pre arb' x'; (x',x)\<in>V\<rbrakk> \<Longrightarrow> f x' \<le> M arb' x'; 
+      pre arb x;
+      RECT body = f
+    \<rbrakk>  \<Longrightarrow> body f x \<le> M arb x"
+  shows "RECT body x \<le> M arb x"
+  apply (rule wf_fixp_induct[where fp=RECT and pre=pre and B=body])
+  apply (rule RECT_unfold)
+  apply (simp add: M)
+  apply (rule WF)
+  apply fact
+  apply (rule IS)
+  apply assumption
+  apply assumption
+  apply assumption
+  done
+
+  lemma wf_fixp_induct:
+    -- "Well-Founded induction for arbitrary fixed points"
+    fixes a :: 'a
+    assumes fixp_unfold: "fp B = B (fp B)"
+    assumes WF: "wf V"
+    assumes P0: "pre a x"
+    assumes STEP: "\<And>f a x. \<lbrakk> 
+      \<And>a' x'. \<lbrakk> pre a' x'; (x',x)\<in>V \<rbrakk> \<Longrightarrow> post a' x' (f x'); fp B = f; pre a x 
+    \<rbrakk> \<Longrightarrow> post a x (B f x)"
+    shows "post a x (fp B x)"
+  proof -
+    have "\<forall>a. pre a x \<longrightarrow> post a x (fp B x)"
+      using WF
+      apply (induct x rule: wf_induct_rule)
+      apply (intro allI impI)
+      apply (subst fixp_unfold)
+      apply (rule STEP)
+      apply (simp)
+      apply (simp)
+      apply (simp)
+      done
+    with P0 show ?thesis by blast
+  qed
+
+  ML_val \<open>@{method refine_mono}\<close>
+  ML_val \<open>Refine_Mono_Prover.untriggered_mono_tac\<close>
+thm refine_mono
