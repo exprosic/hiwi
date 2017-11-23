@@ -12,8 +12,94 @@ declare fib.simps[simp del]
 
 type_synonym tab = "int option list"
 
-datatype ('M, 'a) stateT = StateT (runStateT: "'M \<Rightarrow> ('a \<times> 'M) nres")
-term 0 (**)
+definition nres_fun_separated :: "('a \<Rightarrow> 'b nres) \<Rightarrow> bool" where
+  "nres_fun_separated f \<equiv> FAIL \<in> range f \<longrightarrow> range f = {FAIL}"
+
+lemma nres_fun_separated_intro:
+  assumes "FAIL \<in> range f \<Longrightarrow> range f = {FAIL}"
+  shows "nres_fun_separated f"
+  using assms unfolding nres_fun_separated_def ..
+
+lemma nres_fun_separated_dest:
+  assumes "nres_fun_separated f" "FAIL \<in> range f"
+  shows "range f = {FAIL}"
+  using assms unfolding nres_fun_separated_def ..
+
+typedef ('a, 'b) nres_fun = "Collect (nres_fun_separated :: ('a \<Rightarrow> 'b nres) \<Rightarrow> bool)"
+  apply (rule exI[of _ top])
+  unfolding nres_fun_separated_def
+  apply auto
+  done
+lemma nres_fun_separated_iff
+:
+  "nres_fun_separated f \<longleftrightarrow> (\<forall>x y. f x = FAIL \<longrightarrow> f y = FAIL)"
+  unfolding nres_fun_separated_def image_def by (auto; metis)
+
+setup_lifting type_definition_nres_fun
+
+instantiation nres_fun :: (type, type) complete_lattice
+begin
+(*
+definition "f \<le> g \<equiv> Rep_nres_fun f \<le> Rep_nres_fun g"
+definition "f < g \<equiv> Rep_nres_fun f < Rep_nres_fun g"
+definition "inf f g \<equiv> Abs_nres_fun (inf (Rep_nres_fun f) (Rep_nres_fun g))"
+*)
+lift_definition less_eq_nres_fun :: "('a, 'b) nres_fun \<Rightarrow> ('a, 'b) nres_fun \<Rightarrow> bool" is "op \<le>" .
+lift_definition less_nres_fun ::  "('a, 'b) nres_fun \<Rightarrow> ('a, 'b) nres_fun \<Rightarrow> bool" is "op <" .
+lift_definition inf_nres_fun ::"('a, 'b) nres_fun \<Rightarrow> ('a, 'b) nres_fun \<Rightarrow> ('a, 'b) nres_fun" is inf
+  unfolding nres_fun_separated_iff
+ by force
+lift_definition sup_nres_fun ::"('a, 'b) nres_fun \<Rightarrow> ('a, 'b) nres_fun \<Rightarrow> ('a, 'b) nres_fun" is sup
+  unfolding nres_fun_separated_iff 
+  apply auto
+  apply (erule sup_nres.elims)
+  subgoal by metis
+  subgoal by metis
+  subgoal by auto
+  done
+
+lift_definition top_nres_fun ::"('a, 'b) nres_fun" is top
+  unfolding nres_fun_separated_iff
+  by auto
+
+lift_definition bot_nres_fun ::"('a, 'b) nres_fun" is bot
+  unfolding nres_fun_separated_iff by auto
+
+lift_definition Inf_nres_fun ::"('a, 'b) nres_fun set \<Rightarrow> ('a, 'b) nres_fun" is Inf
+  unfolding nres_fun_separated_iff by auto
+
+lift_definition Sup_nres_fun ::"('a, 'b) nres_fun set \<Rightarrow> ('a, 'b) nres_fun" is Sup
+  unfolding nres_fun_separated_iff  
+  apply auto
+  unfolding image_iff
+  by (metis)
+instance
+  apply (intro_classes)
+  unfolding less_eq_nres_fun_def less_nres_fun_def
+  unfolding bot_nres_fun_def top_nres_fun_def
+  unfolding inf_nres_fun_def sup_nres_fun_def
+  unfolding Inf_nres_fun_def Sup_nres_fun_def
+  subgoal by (simp add: less_fun_def)
+  subgoal by simp
+  subgoal using less_eq_nres_fun.rep_eq by auto
+  subgoal by (simp add: Rep_nres_fun_inject)
+  subgoal using inf_nres_fun.rep_eq inf_nres_fun_def less_eq_nres_fun.rep_eq by auto
+  subgoal using inf_nres_fun.rep_eq inf_nres_fun_def less_eq_nres_fun.rep_eq by auto
+  subgoal using inf_nres_fun.rep_eq inf_nres_fun_def less_eq_nres_fun.rep_eq by auto
+  subgoal using less_eq_nres_fun.rep_eq sup_nres_fun.rep_eq sup_nres_fun_def by auto
+  subgoal using less_eq_nres_fun.rep_eq sup_nres_fun.rep_eq sup_nres_fun_def by auto
+  subgoal using less_eq_nres_fun.rep_eq sup_nres_fun.rep_eq sup_nres_fun_def by auto
+  subgoal by (metis Inf_lower Inf_nres_fun.rep_eq Inf_nres_fun_def image_eqI less_eq_nres_fun.rep_eq less_eq_nres_fun_def)
+  subgoal by (smt Inf_greatest Inf_nres_fun.rep_eq Inf_nres_fun_def image_iff less_eq_nres_fun.rep_eq less_eq_nres_fun_def map_fun_apply)
+  subgoal by (metis Sup_nres_fun.rep_eq Sup_nres_fun_def Sup_upper image_eqI less_eq_nres_fun.rep_eq less_eq_nres_fun_def)
+  subgoal by (smt Sup_le_iff Sup_nres_fun.rep_eq Sup_nres_fun_def image_iff less_eq_nres_fun.rep_eq less_eq_nres_fun_def)
+  subgoal by simp
+  subgoal by simp
+  done
+end
+
+
+datatype ('M, 'a) stateT = StateT (runStateT: "('M, 'a \<times> 'M) nres_fun")
 
 instantiation stateT :: (type, type) complete_lattice
 begin
@@ -25,16 +111,16 @@ fun less_stateT where
   "StateT (f0) < StateT (f1) \<longleftrightarrow> f0 < f1"
 
 fun sup_stateT where
-  "sup (StateT f0) (StateT f1) = StateT (\<lambda>M. sup (f0 M) (f1 M))"
+  "sup (StateT f0) (StateT f1) = StateT (sup f0 f1)"
 
 fun inf_stateT where
-  "inf (StateT f0) (StateT f1) = StateT (\<lambda>M. inf (f0 M) (f1 M))"
+  "inf (StateT f0) (StateT f1) = StateT (inf f0 f1)"
 
-definition "Sup ts \<equiv> StateT (\<lambda>M. Sup {runStateT t M | t. t \<in> ts})"
-definition "Inf ts \<equiv> StateT (\<lambda>M. Inf {runStateT t M | t. t \<in> ts})"
+definition "Sup ts \<equiv> StateT (Sup (runStateT ` ts))"
+definition "Inf ts \<equiv> StateT (Inf (runStateT ` ts))"
 
-definition "bot \<equiv> StateT (\<lambda>M. bot)"
-definition "top \<equiv> StateT (\<lambda>M. top)"
+definition "bot \<equiv> StateT bot"
+definition "top \<equiv> StateT top"
 
 instance
   apply (intro_classes)
@@ -43,46 +129,46 @@ instance
   subgoal for x by (cases x; auto)
   subgoal for x y z by (cases x; cases y; cases z; auto)
   subgoal for x y by (cases x; cases y; auto)
-  subgoal for x y by (cases x; cases y; auto simp: le_fun_def)
-  subgoal for x y by (cases x; cases y; auto simp: le_fun_def)
-  subgoal for x y z by (cases x; cases y; cases z; auto simp: le_fun_def)
-  subgoal for x y by (cases x; cases y; auto simp: le_fun_def)
-  subgoal for x y by (cases x; cases y; auto simp: le_fun_def)
-  subgoal for x y z by (cases x; cases y; cases z; auto simp: le_fun_def)
-  subgoal for x A by (cases x; force intro: Inf_lower simp: le_fun_def)
-  subgoal premises prems for A z by (cases z; force intro: Inf_greatest dest!: prems elim!: less_eq_stateT.elims simp: le_funD le_fun_def)
-  subgoal for x A by (cases x; force intro: Sup_upper simp: le_fun_def)  
-  subgoal premises prems for A z by (cases z; force intro: Sup_least dest!: prems elim!: less_eq_stateT.elims simp: le_funD le_fun_def)
+  subgoal for x y by (cases x; cases y; auto)
+  subgoal for x y by (cases x; cases y; auto)
+  subgoal for x y z by (cases x; cases y; cases z; auto)
+  subgoal for x y by (cases x; cases y; auto)
+  subgoal for x y by (cases x; cases y; auto)
+  subgoal for x y z by (cases x; cases y; cases z; auto)
+  subgoal for x A by (cases x; force intro: Inf_lower)
+  subgoal premises prems for A z by (cases z; force intro: Inf_greatest dest!: prems elim!: less_eq_stateT.elims)
+  subgoal for x A by (cases x; force intro: Sup_upper)
+  subgoal premises prems for A z by (cases z; force intro: Sup_least dest!: prems elim!: less_eq_stateT.elims)
   subgoal by auto
   subgoal by auto
   done
 end    
 
 definition returnT :: "'a \<Rightarrow> ('M, 'a) stateT" where
-  "returnT a \<equiv> StateT (\<lambda>M. RETURN (a, M))"
+  "returnT a \<equiv> StateT (Abs_nres_fun (\<lambda>M. RETURN (a, M)))"
 
 definition bindT :: "('M, 'a) stateT \<Rightarrow> ('a \<Rightarrow> ('M, 'b) stateT) \<Rightarrow> ('M, 'b) stateT" where
-  "bindT s f \<equiv> StateT (\<lambda>M. do {
+  "bindT s f \<equiv> StateT (Abs_nres_fun (\<lambda>M. do {
     (*nres monad*)
-    (v, M') \<leftarrow> runStateT s M;
-    runStateT (f v) M'
-  })"
+    (v, M') \<leftarrow> Rep_nres_fun (runStateT s) M;
+    Rep_nres_fun (runStateT (f v)) M'
+  }))"
 
 adhoc_overloading
   Monad_Syntax.bind bindT
 
 definition getT :: "('M, 'M) stateT" where
-  "getT \<equiv> StateT (\<lambda>M. RETURN (M, M))"
+  "getT \<equiv> StateT (Abs_nres_fun (\<lambda>M. RETURN (M, M)))"
 
 definition putT :: "'M \<Rightarrow> ('M, unit) stateT" where
-  "putT M \<equiv> StateT (\<lambda>_. RETURN ((), M))"
+  "putT M \<equiv> StateT (Abs_nres_fun (\<lambda>_. RETURN ((), M)))"
 
 definition liftT :: "'a nres \<Rightarrow> ('M, 'a) stateT" where
-  "liftT nr = StateT (\<lambda>M. do {
+  "liftT nr = StateT (Abs_nres_fun (\<lambda>M. do {
     (*nres monad*)
     v \<leftarrow> nr;
     RETURN (v, M)
-  })"
+  }))"
 
 definition checkmemT :: "nat \<Rightarrow> (tab, int) stateT \<Rightarrow> (tab, int) stateT" where
   "checkmemT n s \<equiv> do {
@@ -102,7 +188,9 @@ definition checkmemT :: "nat \<Rightarrow> (tab, int) stateT \<Rightarrow> (tab,
 type_synonym ('a, 'b) recursor = "('a \<Rightarrow> 'b) \<Rightarrow> ('a \<Rightarrow> 'b)"
 
 definition unpack_body :: "('a, ('M, 'b) stateT) recursor \<Rightarrow> ('a \<times> 'M, ('b \<times> 'M) nres) recursor" where
-  "unpack_body body \<equiv> \<lambda>f (n, M). runStateT (body ((StateT oo curry) f) n) M"
+  "unpack_body body \<equiv> \<lambda>f (n, M). Rep_nres_fun (runStateT (body
+    (\<lambda>a. StateT (Abs_nres_fun (\<lambda>M. f (a, M))))
+  n)) M"
 
 definition cmem :: "tab \<Rightarrow> bool" where
   "cmem M \<equiv> \<forall>i v. i<length M \<longrightarrow> M!i = Some v \<longrightarrow> v=fib i"
@@ -467,20 +555,6 @@ lemma crel_vt_checkmemT:
     using assms(2) by (fastforce elim: mem_param_isvalid_elim)
   done
 
-lemma "trimono bodyT \<Longrightarrow> trimono (unpack_body bodyT)"
-  apply (rule trimonoI)
-  subgoal
-    apply (rule monotoneI)
-    unfolding fun_ord_def
-    apply (intro allI)
-    sorry
-  subgoal
-    apply (rule monoI)
-    apply (rule le_funI)
-    apply (drule le_funD)
-    sorry
-  oops
-
 lemma flat_ge_stateT:
   "flat_ge (StateT t0) (StateT t1) \<Longrightarrow> flatf_ge t0 t1"
   apply (rule fun_ordI)
@@ -493,28 +567,7 @@ lemma
   assumes "trimono bodyT"
   shows "trimono (unpack_body bodyT)"
   apply (rule trimonoI)
-  subgoal
-    thm trimonoD_flatf_ge[OF assms, THEN monotoneD]
-    apply (rule monotoneI)
-    unfolding unpack_body_def
-    apply (rule fun_ordI)
-    apply (split prod.splits)
-    apply clarify
-    apply (rule fun_ordD[of flat_ge]) back
-    apply (rule flat_ge_stateT)
-    unfolding stateT.collapse
-    apply (rule fun_ordD[of flat_ge]) back
-    apply (rule trimonoD_flatf_ge[OF assms, THEN monotoneD])
-    unfolding comp_def
-    apply (rule fun_ordI)
-    apply (rule flat_ordI)
-    unfolding curry_def top_stateT_def
-    
-    unfolding stateT.inject
-    apply (rule ext)
-    apply (drule fun_ordD[of "flat_ord FAIL"])
-    
-    sorry
+    defer
   subgoal
     apply (rule monoI)
     unfolding unpack_body_def
@@ -534,9 +587,32 @@ lemma
     apply (drule le_funD)
     apply assumption
     done
-
+  subgoal
+    apply (rule monotoneI)
+    apply (rule fun_ordI)
+    unfolding unpack_body_def
+    apply (split prod.splits)
+    apply clarify
+    apply (rule fun_ordD[of flat_ge]) back
+    apply (rule flat_ge_stateT)
+    unfolding stateT.collapse
+    apply (rule fun_ordD[of flat_ge]) back
+    apply (rule trimonoD_flatf_ge[OF assms, THEN monotoneD])
+    unfolding comp_def
+    apply (rule fun_ordI)
+    apply (rule flat_ordI)
+    unfolding curry_def top_stateT_def
+    unfolding stateT.inject
+    apply (rule ext)
+    apply (drule fun_ordD[of "flat_ord FAIL"])
+    unfolding flat_ord_def
+    apply (erule disjE)
+     defer
+    apply assumption
+    apply simp
   oops
-    
+  thm le_fun_def
+  term comp
   term 0 (*
 lemma
   assumes "crel_nt nr0 nr"
