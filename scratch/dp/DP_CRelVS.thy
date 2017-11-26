@@ -15,14 +15,14 @@ context
 begin
   
   (* Predicates *)
-definition cmem :: "('param \<rightharpoonup> 'result) \<Rightarrow> bool" where
-  "cmem M \<equiv> \<forall>param\<in>dom M. M param = Some (dp param)"
+definition cmem :: "('param, 'result) mapping \<Rightarrow> bool" where
+  "cmem M \<equiv> \<forall>param\<in>Mapping.keys M. Mapping.lookup M param = Some (dp param)"
 term 0 (**)
   
-definition crel_vs :: "('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> ('param \<rightharpoonup> 'result, 'b) state \<Rightarrow> bool" where
+definition crel_vs :: "('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> (('param, 'result) mapping, 'b) state \<Rightarrow> bool" where
   "crel_vs R v s \<equiv> \<forall>M. cmem M \<longrightarrow> (case runState s M of (v', M') \<Rightarrow> R v v' \<and> cmem M')"
   
-definition crel_vs_alt :: "('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> ('param \<rightharpoonup> 'result, 'b) state \<Rightarrow> bool" where
+definition crel_vs_alt :: "('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> (('param, 'result) mapping, 'b) state \<Rightarrow> bool" where
   "crel_vs_alt R v s \<equiv> pred_fun cmem (pred_prod (R v) cmem) (runState s)"
 
 abbreviation rel_fun_lifted :: "('a \<Rightarrow> 'c \<Rightarrow> bool) \<Rightarrow> ('b \<Rightarrow> 'd \<Rightarrow> bool) \<Rightarrow> ('a \<Rightarrow> 'b) \<Rightarrow> ('c ==_\<Longrightarrow> 'd) \<Rightarrow> bool" (infixr "===>\<^sub>T" 55) where
@@ -39,17 +39,21 @@ term 0 (**)
   
   (* cmem *)
 lemma cmem_intro:
-  assumes "\<And>param v. M param = Some v \<Longrightarrow> v = dp param"
+  assumes "\<And>param v. Mapping.lookup M param = Some v \<Longrightarrow> v = dp param"
   shows "cmem M"
-  using assms unfolding cmem_def by blast
+  using assms unfolding cmem_def keys_dom_lookup by blast
 term 0 (**)
   
 lemma cmem_elim:
-  assumes "cmem M" "M param = Some v"
+  assumes "cmem M" "Mapping.lookup M param = Some v"
   obtains "dp param = v"
-  using assms unfolding cmem_def dom_def by auto
+  using assms unfolding cmem_def dom_def keys_dom_lookup by auto
 term 0 (**)
   
+lemma cmem_empty:
+  "cmem Mapping.empty"
+  by (auto intro: cmem_intro simp: lookup_empty)
+
   (* crel_vs *)
 lemma crel_vs_intro:
   assumes "\<And>M v' M'. \<lbrakk>cmem M; runState v\<^sub>T M = (v', M')\<rbrakk> \<Longrightarrow> R v v' \<and> cmem M'"
@@ -73,6 +77,16 @@ lemma consistentDP_intro:
   assumes "\<And>param. crel_vs (op =) (dp param) (dp\<^sub>T param)"
   shows "consistentDP dp\<^sub>T"
   using assms unfolding consistentDP_def by blast
+
+lemma consistentDP_elim:
+  assumes "consistentDP dp\<^sub>T" "cmem M"
+  obtains v M' where "runState (dp\<^sub>T n) M = (v, M')" "v = dp n" "cmem M'"
+  using assms unfolding consistentDP_def by (fastforce elim: crel_vs_elim dest: rel_funD)
+
+corollary consistentDP_entry:
+  assumes "consistentDP dp\<^sub>T"
+  shows "fst (runState (dp\<^sub>T n) Mapping.empty) = dp n"
+  by (rule consistentDP_elim[OF assms cmem_empty, of n]) simp
 term 0 (**)
   
 lemma crel_vs_return:
@@ -82,8 +96,8 @@ term 0 (**)
   
   (* Low level operators *)
 lemma cmem_upd:
-  "\<lbrakk>cmem M; v = dp param\<rbrakk> \<Longrightarrow> cmem (M(param\<mapsto>v))"
-  unfolding cmem_def by auto
+  "\<lbrakk>cmem M; v = dp param\<rbrakk> \<Longrightarrow> cmem (Mapping.update param v M)"
+  by (fastforce intro: cmem_intro elim: cmem_elim simp: lookup_update' split: if_splits)
 term 0 (**)
   
 lemma crel_vs_get:
