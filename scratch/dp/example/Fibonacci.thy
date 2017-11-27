@@ -41,49 +41,224 @@ lemma fib\<^sub>T_entry_correct:
   "fib\<^sub>T_entry = fib"
   unfolding fib\<^sub>T_entry_def using fib.consistentDP_entry[OF fib\<^sub>T_correct] ..
 
-lemma option_case_distrib2:
-  "(case_option f1 f2 x) v = case_option (f1 v) (\<lambda>y. f2 y v) x"
-  by (auto split: option.split)
-  
-lemma prod_absorb:
-  "(case (case a of (c, d) \<Rightarrow> (f c d, g c d)) of
-  (p, q) \<Rightarrow> h p q) = (case a of (c, d) \<Rightarrow>
-  (h (f c d) (g c d)))"
-  by (auto split: prod.splits)
-
-thm case_prod_beta
 lemma Let_absorb:
   "(let (a, b) = (let (c, d) = x in (p c d, q c d)) in f a b)
- = (let (c, d) = x in f (p c d) (q c d))"
+ = (let (c, d) = x; (a, b) = (p c d, q c d) in f a b)"
   by (auto simp: Let_def split: prod.splits)
 
-schematic_goal "?x = runState (fib\<^sub>T (Suc (Suc n))) Mapping.empty"
-  unfolding fib\<^sub>T.simps
-  unfolding case_prod\<^sub>T_def
-  unfolding checkmem_def
-  unfolding unlift_33_def
-  unfolding fun_app_lifted_def
-  unfolding return_def
-  unfolding bind_def
-  unfolding option.case_distrib option_case_distrib2
-  unfolding state.sel
-  unfolding Let_absorb
-  unfolding Let_def
-  unfolding state.sel
-  unfolding prod.case
-  unfolding state.sel
-  unfolding prod.case
-  unfolding prod_absorb
-  unfolding state.sel state.collapse
-  unfolding prod.case_distrib option.case_distrib
-  unfolding get_def put_def
-  unfolding state.sel
-  unfolding prod.case
-  unfolding prod_absorb
-  unfolding option_case_distrib2
-  unfolding prod_absorb
-  oops
+lemma Let_absorb2:
+  "(let (a, b) = (let (c, d) = x; (e, f) = y c d in (p c d e f, q c d e f)) in g a b)
+ = (let (c, d) = x; (e, f) = y c d; (a, b) = (p c d e f, q c d e f) in g a b)"
+  by (auto simp: Let_def split: prod.splits)
 
-term 0 (*
-export_code fib\<^sub>T_entry in SML
+lemma Let_unfold_pair:
+  "(let (a, b) = (x, y) in f a b) = f x y"
+  by (auto simp: Let_def split: prod.splits)
+
+lemma Let_split_pair:
+  "(let (a, b) = (x, y) in f a b) = (let a=x; b=y in f a b)"
+  by auto
+
+lemma runState_option:
+  "runState (case x of None \<Rightarrow> f0 | Some y \<Rightarrow> ifSome f1 y) M
+ = (case x of None \<Rightarrow> runState f0 M | Some y \<Rightarrow> runState (ifSome f1 y) M)"
+  by (auto split: option.split)
+
+
+definition "runState' \<equiv> runState"
+
+
+schematic_goal fib\<^sub>T_simp1:
+  "runState (fib\<^sub>T 0) M = ?x"
+  apply (subst fib\<^sub>T.simps(1))
+  apply (subst checkmem_def)
+  apply (subst bind_def)
+  apply (subst state.sel)
+  apply (subst get_def)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst bind_def)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst bind_def)
+  apply (subst get_def)
+  apply (subst state.sel)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst bind_def)
+  apply (subst put_def)
+  apply (subst state.sel)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst runState_option)
+  apply (subst state.sel)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (rule refl)
+  done
+
+schematic_goal fib\<^sub>T_simp2:
+  "runState (fib\<^sub>T (Suc 0)) M = ?x"
+  apply (subst fib\<^sub>T.simps(2))
+  apply (subst checkmem_def)
+  apply (subst bind_def)
+  apply (subst state.sel)
+  apply (subst get_def)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst bind_def)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst bind_def)
+  apply (subst get_def)
+  apply (subst state.sel)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst bind_def)
+  apply (subst put_def)
+  apply (subst state.sel)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst runState_option)
+  apply (subst state.sel)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (rule refl)
+  done
+
+schematic_goal fib\<^sub>T_simp3:
+  "runState (fib\<^sub>T (Suc (Suc n))) M = ?x"
+  apply (subst fib\<^sub>T.simps(3))
+  apply (subst checkmem_def)
+  apply (subst bind_def)
+  apply (subst state.sel)
+  apply (subst get_def)
+  apply (subst state.sel)
+  apply (subst Let_def)
+  apply (subst prod.case)
+  apply (subst fun_app_lifted_def)
+  apply (subst bind_def)
+  apply (subst case_prod\<^sub>T_def)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst Let_def)
+  apply (subst prod.case)
+  apply (subst bind_def)
+  apply (subst state.sel)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst Let_def)
+  apply (subst prod.case)
+  apply (subst unlift_33_def)
+  apply (subst fun_app_lifted_def)
+  apply (subst bind_def)
+  apply (subst return_def)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst state.sel)
+  apply (subst return_def)
+  apply (subst Let_unfold_pair)
+  apply (subst state.collapse)
+  apply (subst bind_def)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst state.sel)
+  apply (subst bind_def)
+  apply (subst fun_app_lifted_def)
+  apply (subst bind_def)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst state.collapse)
+  apply (subst fun_app_lifted_def)
+  apply (subst bind_def)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst state.collapse)
+  apply (subst bind_def)
+  apply (subst state.sel)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst fun_app_lifted_def)
+  apply (subst bind_def)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst state.collapse)
+  apply (subst fun_app_lifted_def)
+  apply (subst bind_def)
+  apply (subst bind_def)
+  apply (subst state.sel)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst Let_absorb)
+  apply (subst Let_unfold_pair)
+  apply (subst bind_def)
+  apply (subst state.sel)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst bind_def)
+  apply (subst state.sel)
+  apply (subst state.sel)
+  apply (subst Let_absorb2)
+  apply (subst Let_unfold_pair)
+  apply (subst prod.case)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst Let_absorb2)
+  apply (subst Let_split_pair)
+  apply (subst bind_def)
+  apply (subst state.sel)
+  apply (subst bind_def)
+  apply (subst state.sel)
+  apply (subst put_def)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst get_def)
+  apply (subst state.sel)
+  apply (subst Let_unfold_pair)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (subst runState_option)
+  apply (subst state.sel)
+  apply (subst return_def)
+  apply (subst state.sel)
+  apply (unfold runState'_def[symmetric])
+  apply (rule refl)
+  done
+
+lemmas fib\<^sub>T_runState_simps[code_unfold] =
+  fib\<^sub>T_simp1 fib\<^sub>T_simp2 fib\<^sub>T_simp3
+
+fun fib\<^sub>T' :: "nat \<Rightarrow> (nat, int option) mapping \<Rightarrow> (int option \<times> (nat, int option) mapping)" where
+  "fib\<^sub>T' 0 M = runState (fib\<^sub>T 0) M"
+| "fib\<^sub>T' (Suc 0) M = runState (fib\<^sub>T (Suc 0)) M"
+| "fib\<^sub>T' (Suc (Suc n)) M = runState (fib\<^sub>T (Suc (Suc n))) M"
+
+lemma runState'_fold[code_unfold]:
+  "runState' (fib\<^sub>T n) M = fib\<^sub>T' n M"
+  unfolding runState'_def by (induction rule: fib\<^sub>T'.induct) auto
+
+definition fib\<^sub>T'_entry where
+  "fib\<^sub>T'_entry n \<equiv> fst (fib\<^sub>T' n Mapping.empty)"
+
+lemma fib\<^sub>T'_entry_correct:
+  "fib\<^sub>T'_entry = fib"
+  apply (unfold fib\<^sub>T_entry_correct[symmetric])
+  unfolding fib\<^sub>T'_entry_def fib\<^sub>T_entry_def
+  apply (rule ext)
+  apply (rule arg_cong[where f=fst])
+  apply (induct_tac rule: fib\<^sub>T'.induct)
+    apply auto
+  done
+
+export_code fib\<^sub>T'_entry in SML
+
 end
