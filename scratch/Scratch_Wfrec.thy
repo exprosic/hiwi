@@ -1,5 +1,5 @@
 theory Scratch_Wfrec
-  imports Main "HOL-Library.Old_Recdef" "dp/DP_CrelVS" Rewrite
+  imports Main "HOL-Library.Old_Recdef" "dp/DP_CrelVS"
 begin
 
 consts fib :: "nat \<Rightarrow> int"
@@ -36,16 +36,17 @@ proof -
       using assms(1) apply (induction x rule: wf_induct_rule)
       subgoal premises IH for x 
         thm IH
-        apply (rewrite in "_ body" wfrec_fixpoint)
+        apply (subst wfrec_fixpoint)
         subgoal using assms(1) .
         subgoal using assms(2) .
-        apply (rewrite in "_ bodyT" wfrec_fixpoint)
+        apply (subst wfrec_fixpoint) back
         subgoal using assms(1) .
         subgoal using assms(3) .
-        using IH assms(4)[THEN rel_funD, OF rel_funI, THEN rel_funD
+        apply (rule assms(4)[THEN rel_funD, OF rel_funI, THEN rel_funD
             , where x1="wfrec wfR body" and y1="wfrec wfR bodyT" and x=x and y=x
             , simplified
-            ]
-        ML_val \<open>@{method rewrite}\<close>
+            ])
+        apply (rule IH) (*unavoidable IH's premise*)
+        oops
 end
 end
