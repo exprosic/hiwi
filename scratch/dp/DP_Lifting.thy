@@ -4,7 +4,31 @@ begin
 
   (* Types *)
 type_synonym ('a,'M,'b) fun_lifted = "'a \<Rightarrow> ('M,'b) state" ("_ ==_\<Longrightarrow> _" [3,1000,2] 2)
-type_synonym ('a,'b) dpfun = "'a ==('a, 'b) mapping\<Longrightarrow> 'b" (infixr "\<Rightarrow>\<^sub>T" 2)
+term 0 (**)
+
+locale mem_defs =
+  fixes lookup :: "'param \<Rightarrow> ('mem, 'result option) state"
+    and update :: "'param \<Rightarrow> 'result \<Rightarrow> ('mem, unit) state"
+    and empty_mem :: "'mem"
+    and mem_map :: "'mem \<Rightarrow> ('param \<rightharpoonup> 'result)"
+begin
+
+definition checkmem :: "'param \<Rightarrow> ('mem, 'result) state \<Rightarrow> ('mem, 'result) state" where
+  "checkmem param calc \<equiv> do {
+    x \<leftarrow> lookup param;
+    case x of
+      Some x \<Rightarrow> return x
+    | None \<Rightarrow> do {
+        y \<leftarrow> calc;
+        update param y;
+        return y
+      }
+  }"
+  
+abbreviation checkmem_eq :: "('param =='mem\<Longrightarrow> 'result) \<Rightarrow> 'param \<Rightarrow> ('mem, 'result) state \<Rightarrow> bool" ("_$ _ =CHECKMEM= _" [1000,51] 51) where
+  "(dp\<^sub>T$ param =CHECKMEM= calc) \<equiv> (dp\<^sub>T param = checkmem param calc)"
+
+end
 term 0 (**)
   
   (* Basics *)
@@ -39,23 +63,6 @@ term 0 (**)
 lemma return_app_return:
   "\<langle>f\<rangle> . \<langle>x\<rangle> = f x"
   unfolding fun_app_lifted_def left_identity ..
-term 0 (**)
-  
-definition checkmem :: "'param \<Rightarrow> (('param, 'result) mapping, 'result) state \<Rightarrow> (('param, 'result) mapping, 'result) state" where
-  "checkmem param calc \<equiv> do {
-    M \<leftarrow> get;
-    case Mapping.lookup M param of
-      Some x \<Rightarrow> return x
-    | None \<Rightarrow> do {
-        x \<leftarrow> calc;
-        M' \<leftarrow> get;
-        put (Mapping.update param x M');
-        return x
-      }
-  }"
-  
-abbreviation checkmem_eq :: "('param \<Rightarrow>\<^sub>T 'result) \<Rightarrow> 'param \<Rightarrow> (('param, 'result) mapping, 'result) state \<Rightarrow> bool" ("_$ _ =CHECKMEM= _" [1000,51] 51) where
-  "(dp\<^sub>T$ param =CHECKMEM= calc) \<equiv> (dp\<^sub>T param = checkmem param calc)"
 term 0 (**)
   
 context

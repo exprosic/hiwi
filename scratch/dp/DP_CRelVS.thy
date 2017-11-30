@@ -1,12 +1,14 @@
 theory DP_CRelVS
-  imports "./Monad" "./DP_Lifting"
+  imports "./Monad" "./DP_Lifting" "HOL-Library.RBT_Mapping"
 begin
-  
-definition rel_imp :: "('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> ('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> bool" where
-  "rel_imp R R' \<equiv> \<forall>x y. R x y \<longrightarrow> R' x y"
-term 0 (**)
+
+locale mem_correct = mem_defs +
+  assumes lookup_correct: "\<And>v m'. runState (lookup k) m = (v, m') \<Longrightarrow> mem_map m k = v \<and> mem_map m' = mem_map m"
+    and update_correct: "\<And>u m'. runState (update k v) m = (u, m') \<Longrightarrow> mem_map m' = (mem_map m)(k\<mapsto>v)"
+    and empty_correct: "mem_map (empty_mem) = Map.empty"
 
 locale dp_consistency =
+  mem_correct lookup for lookup :: "'param \<Rightarrow> ('mem, 'result option) state"  +
   fixes dp :: "'param \<Rightarrow> 'result"
 begin
   
@@ -15,14 +17,14 @@ context
 begin
   
   (* Predicates *)
-definition cmem :: "('param, 'result) mapping \<Rightarrow> bool" where
-  "cmem M \<equiv> \<forall>param\<in>Mapping.keys M. Mapping.lookup M param = Some (dp param)"
+definition cmem :: "'mem \<Rightarrow> bool" where
+  "cmem M \<equiv> \<forall>param\<in>dom (mem_map M). mem_map M param = Some (dp param)"
 term 0 (**)
   
-definition crel_vs :: "('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> (('param, 'result) mapping, 'b) state \<Rightarrow> bool" where
+definition crel_vs :: "('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> ('mem, 'b) state \<Rightarrow> bool" where
   "crel_vs R v s \<equiv> \<forall>M. cmem M \<longrightarrow> (case runState s M of (v', M') \<Rightarrow> R v v' \<and> cmem M')"
   
-definition crel_vs_alt :: "('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> (('param, 'result) mapping, 'b) state \<Rightarrow> bool" where
+definition crel_vs_alt :: "('a \<Rightarrow> 'b \<Rightarrow> bool) \<Rightarrow> 'a \<Rightarrow> ('mem, 'b) state \<Rightarrow> bool" where
   "crel_vs_alt R v s \<equiv> pred_fun cmem (pred_prod (R v) cmem) (runState s)"
 
 abbreviation rel_fun_lifted :: "('a \<Rightarrow> 'c \<Rightarrow> bool) \<Rightarrow> ('b \<Rightarrow> 'd \<Rightarrow> bool) \<Rightarrow> ('a \<Rightarrow> 'b) \<Rightarrow> ('c ==_\<Longrightarrow> 'd) \<Rightarrow> bool" (infixr "===>\<^sub>T" 55) where
@@ -33,26 +35,26 @@ lemma "crel_vs = crel_vs_alt"
   unfolding crel_vs_def crel_vs_alt_def
   by (fastforce split: pred_prod_split)
 
-definition consistentDP :: "('param \<Rightarrow>\<^sub>T 'result) \<Rightarrow> bool" where
+definition consistentDP :: "('param =='mem\<Longrightarrow> 'result) \<Rightarrow> bool" where
   "consistentDP \<equiv> (op = ===> crel_vs op =) dp"
 term 0 (**)
   
   (* cmem *)
 lemma cmem_intro:
-  assumes "\<And>param v. Mapping.lookup M param = Some v \<Longrightarrow> v = dp param"
+  assumes "\<And>param v. mem_map M param = Some v \<Longrightarrow> v = dp param"
   shows "cmem M"
   using assms unfolding cmem_def keys_dom_lookup by blast
 term 0 (**)
   
-lemma cmem_elim:
-  assumes "cmem M" "Mapping.lookup M param = Some v"
-  obtains "dp param = v"
+lemma cmem_dest:
+  assumes "cmem M" "mem_map M param = Some v"
+  shows "v = dp param"
   using assms unfolding cmem_def dom_def keys_dom_lookup by auto
 term 0 (**)
   
 lemma cmem_empty:
-  "cmem Mapping.empty"
-  by (auto intro: cmem_intro simp: lookup_empty)
+  "cmem empty_mem"
+  by (auto intro: cmem_intro simp: empty_correct)
 
   (* crel_vs *)
 lemma crel_vs_intro:
@@ -67,11 +69,6 @@ lemma crel_vs_elim:
   using assms unfolding crel_vs_def by blast
 term 0 (**)
   
-lemma crel_vs_mono:
-  assumes "crel_vs R v s" "rel_imp R R'"
-  shows "crel_vs R' v s"
-  using assms unfolding rel_imp_def by (fastforce intro: crel_vs_intro elim: crel_vs_elim)
-
   (* consistentDP *)
 lemma consistentDP_intro:
   assumes "\<And>param. crel_vs (op =) (dp param) (dp\<^sub>T param)"
@@ -85,8 +82,10 @@ lemma consistentDP_elim:
 
 corollary consistentDP_entry:
   assumes "consistentDP dp\<^sub>T"
-  shows "fst (runState (dp\<^sub>T n) Mapping.empty) = dp n"
+  shows "fst (runState (dp\<^sub>T n) empty_mem) = dp n"
   by (rule consistentDP_elim[OF assms cmem_empty, of n]) simp
+  
+  
 term 0 (**)
   
 lemma crel_vs_return:
@@ -94,43 +93,67 @@ lemma crel_vs_return:
   unfolding return_def by (fastforce intro: crel_vs_intro)
 term 0 (**)
   
+lemma crel_vs_bind:
+  assumes "crel_vs R0 v v'" "\<And>v v'. R0 v v' \<Longrightarrow> crel_vs R1 (f v) (f' v')"
+  shows "crel_vs R1 (f v) (v' \<bind> f')"
+  using assms unfolding bind_def by (fastforce intro: crel_vs_intro elim: crel_vs_elim)
+
   (* Low level operators *)
-lemma cmem_upd:
-  "\<lbrakk>cmem M; v = dp param\<rbrakk> \<Longrightarrow> cmem (Mapping.update param v M)"
-  by (fastforce intro: cmem_intro elim: cmem_elim simp: lookup_update' split: if_splits)
-term 0 (**)
+lemma cmem_update:
+  assumes "cmem M" "v = dp param" "runState (update param v) M = (u, M')"
+  shows "cmem M'"
+  using update_correct assms by (fastforce intro!: cmem_intro dest: cmem_dest split: if_splits)
+term 0(**)
+
   
 lemma crel_vs_get:
   "\<lbrakk>\<And>M. cmem M \<Longrightarrow> crel_vs R v (sf M)\<rbrakk> \<Longrightarrow> crel_vs R v (get \<bind> sf)"
-  unfolding get_def bind_def by (fastforce intro: crel_vs_intro elim: crel_vs_elim split: prod.split)
+  unfolding get_def bind_def by (fastforce intro: crel_vs_intro elim: crel_vs_elim)
 term 0 (**)
   
 lemma crel_vs_put:
   "\<lbrakk>crel_vs R v sf; cmem M\<rbrakk> \<Longrightarrow> crel_vs R v (put M \<then> sf)"
-  unfolding put_def bind_def by (fastforce intro: crel_vs_intro elim: crel_vs_elim split: prod.split)
+  unfolding put_def bind_def by (fastforce intro: crel_vs_intro elim: crel_vs_elim)
 term 0 (**)
-  
+
+lemma crel_vs_checkmem:
+  "\<lbrakk>crel_vs op = (dp param) s\<rbrakk> \<Longrightarrow> crel_vs op = (dp param) (checkmem param s)"
+  unfolding checkmem_def
+  oops
+
+lemma cmem_lookup:
+  "cmem M'" if "cmem M" "runState (lookup param) M = (v, M')"
+  using lookup_correct[of param M] that unfolding cmem_def map_le_def by force
+
+
+lemma crel_vs_lookup:
+  "crel_vs (\<lambda> v v'. v = dp param \<and> (v'=Some v \<or> v'=None)) (dp param) (lookup param)"
+  by (auto intro: crel_vs_intro dest: cmem_lookup cmem_dest lookup_correct)
+
+lemma crel_vs_update:
+  "crel_vs op = () (update param (dp param))"
+  by (auto intro: cmem_update crel_vs_intro)
+
 lemma crel_vs_bind_eq:
   "\<lbrakk>crel_vs op = v s; crel_vs R (f v) (sf v)\<rbrakk> \<Longrightarrow> crel_vs R (f v) (s \<bind> sf)"
   unfolding bind_def rel_fun_def by (fastforce intro: crel_vs_intro elim: crel_vs_elim split: prod.split)
 term 0 (**)
-  
+
 lemma crel_vs_checkmem:
   "\<lbrakk>crel_vs op = (dp param) s\<rbrakk> \<Longrightarrow> crel_vs op = (dp param) (checkmem param s)"
-  unfolding checkmem_def by (fastforce intro: crel_vs_return crel_vs_get crel_vs_put
-      crel_vs_bind_eq cmem_upd elim: cmem_elim split: option.splits)
-term 0 (**)
+  unfolding checkmem_def
+  by (rule crel_vs_bind[OF crel_vs_lookup]) (auto intro!: crel_vs_return crel_vs_update crel_vs_bind_eq crel_vs_lookup)
   
   (** Transfer rules **)
   (* Basics *)
 lemma return_transfer[transfer_rule]:
   "(R ===>\<^sub>T R) (\<lambda>x. x) return"
-  unfolding id_def rel_fun_def by (metis crel_vs_return)
+  unfolding rel_fun_def by (metis crel_vs_return)
     
 lemma bind_transfer[transfer_rule]:
   "(crel_vs R0 ===> (R0 ===>\<^sub>T R1) ===> crel_vs R1) (\<lambda>v f. f v) (op \<bind>)"
-  unfolding bind_def rel_fun_def by (fastforce intro: crel_vs_intro elim: crel_vs_elim split: prod.split)
-    
+  unfolding rel_fun_def by (metis crel_vs_bind)
+
 lemma fun_app_lifted_transfer[transfer_rule]:
   "(crel_vs (R0 ===>\<^sub>T R1) ===> crel_vs R0 ===> crel_vs R1) (\<lambda> f x. f x) (op .)"
   unfolding fun_app_lifted_def by transfer_prover
@@ -384,5 +407,65 @@ definition K :: "'a \<Rightarrow> 'a \<Rightarrow> 'a \<Rightarrow> bool" where
 
 lemma K_self: "K x x x"
   unfolding K_def eq_onp_def by auto
+
+definition map_lookup where
+  "map_lookup k \<equiv> do {
+    m \<leftarrow> get;
+    return (m k)
+  }"
+
+definition map_update where
+  "map_update k v \<equiv> do {
+    m \<leftarrow> get;
+    let m' = m(k\<mapsto>v);
+    put m'
+  }"
+
+locale pure_mem_def =
+  fixes pure_lookup :: "'mem \<Rightarrow> 'param \<Rightarrow> 'result option"
+    and pure_update :: "'mem \<Rightarrow> 'param \<Rightarrow> 'result \<Rightarrow> 'mem"
+begin
+
+definition lookup :: "'param \<Rightarrow> ('mem, 'result option) state" where
+  "lookup k \<equiv> do {
+    m \<leftarrow> get;
+    return (pure_lookup m k)
+  }"
+
+definition update :: "'param \<Rightarrow> 'result \<Rightarrow> ('mem, unit) state" where
+  "update k v \<equiv> do {
+    m \<leftarrow> get;
+    let m' = pure_update m k v;
+    put m'
+  }"
+
+definition "mem_map \<equiv> pure_lookup"
+
 end
- 
+
+interpretation hol_map_def: pure_mem_def "\<lambda>m k. m k" "\<lambda>m k v. m(k\<mapsto>v)" .
+
+
+interpretation hol_map: mem_correct hol_map_def.lookup hol_map_def.update Map.empty hol_map_def.mem_map
+  unfolding pure_mem_def.lookup_def pure_mem_def.update_def pure_mem_def.mem_map_def bind_def return_def get_def put_def
+  by standard auto
+
+interpretation rbt_map_def: pure_mem_def RBT.lookup "\<lambda>m k v. RBT.insert k v m" .
+
+interpretation rbt_map: mem_correct rbt_map_def.lookup rbt_map_def.update RBT.empty rbt_map_def.mem_map
+  unfolding pure_mem_def.lookup_def pure_mem_def.update_def pure_mem_def.mem_map_def bind_def return_def get_def put_def
+  by standard (auto simp: lookup_update' lookup_empty)
+
+locale dp_consistency_default =
+  fixes dp :: "'param :: linorder \<Rightarrow> 'result"
+begin
+
+sublocale dp_consistency hol_map_def.update Map.empty hol_map_def.mem_map hol_map_def.lookup dp ..
+sublocale rbt: dp_consistency rbt_map_def.update RBT.empty rbt_map_def.mem_map rbt_map_def.lookup dp ..
+
+end
+
+notepad begin
+  interpret x: dp_consistency_default id .
+  term x.rbt.consistentDP
+end
